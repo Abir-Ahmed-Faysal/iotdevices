@@ -17,5 +17,5 @@ constexpr int ETH_POWER = 16;
 constexpr eth_clock_mode_t ETH_CLOCK_MODE = ETH_CLOCK_GPIO0_IN;
 
 // Emergency SoftAP Fallback Configuration
-constexpr char AP_SSID[] = "JOY-IoT-Setup";
+constexpr char AP_SSID[] = "FishVoice-IoT-Setup";
 constexpr char AP_PASSWORD[] = "faysaliotsetup";

@@ -16,7 +16,7 @@
 
     <application
         android:allowBackup="false"
-        android:icon="@drawable/ic_launcher"
+        android:icon="@drawable/fishvoice"
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar"
@@ -38,9 +38,9 @@
             android:foregroundServiceType="dataSync|microphone" />
 
         <service
-            android:name=".JoyTileService"
-            android:icon="@drawable/ic_launcher"
-            android:label="Joy Voice"
+            android:name=".FishVoiceTileService"
+            android:icon="@drawable/fishvoice"
+            android:label="FishVoice Voice"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
             android:exported="true">
             <intent-filter>

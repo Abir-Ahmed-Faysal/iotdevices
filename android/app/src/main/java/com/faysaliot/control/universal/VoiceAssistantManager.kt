@@ -49,7 +49,7 @@ class VoiceAssistantManager(
 
         requestAudioFocus()
 
-        val utteranceId = "JOY_TTS_${System.currentTimeMillis()}"
+        val utteranceId = "FishVoice_TTS_${System.currentTimeMillis()}"
         tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
             override fun onStart(id: String?) = Unit
             override fun onDone(id: String?) {
@@ -108,7 +108,7 @@ class VoiceAssistantManager(
         fun isWakeWord(raw: String): Boolean {
             val text = raw.lowercase(Locale.ROOT).trim()
             val wakePhrases = listOf(
-                "hey joy", "hi joy", "joy", "hey zoy", "hi zoy",
+                "hey FishVoice", "hi FishVoice", "FishVoice", "hey zoy", "hi zoy",
                 "হে জয়", "জয়", "হেই জয়", "হে জয়", "জয়",
             )
             return wakePhrases.any { text.contains(it) }

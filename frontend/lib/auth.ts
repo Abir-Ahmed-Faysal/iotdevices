@@ -37,6 +37,15 @@ export function getAdminUsername() {
   return required("ADMIN_USERNAME");
 }
 
+export function getOAuthClientId() {
+  return required("GOOGLE_CLIENT_ID");
+}
+
+export function authenticateOAuthClient(clientId: string, clientSecret: string) {
+  return constantTimeStringEqual(clientId, getOAuthClientId()) &&
+    constantTimeStringEqual(clientSecret, required("GOOGLE_CLIENT_SECRET"));
+}
+
 export function authenticate(request: NextRequest) {
   const token = request.cookies.get(SESSION_COOKIE)?.value;
   if (!token) return null;
@@ -143,10 +152,11 @@ export function verifyOAuthCode(code: string) {
   }
 }
 
-export function createOAuthToken(username: string, tokenType: "access" | "refresh") {
+export function createOAuthToken(username: string, tokenType: "access" | "refresh", clientId: string) {
   const payload = Buffer.from(JSON.stringify({
     username,
     type: tokenType,
+    clientId,
     expiresAt: Math.floor(Date.now() / 1000) + OAUTH_TOKEN_TTL_SECONDS,
   })).toString("base64url");
   return `${payload}.${signature(payload, sessionSecret())}`;
@@ -165,6 +175,7 @@ export function verifyOAuthToken(token: string) {
     const data = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as {
       username?: string;
       type?: string;
+      clientId?: string;
       expiresAt?: number;
     };
     if (

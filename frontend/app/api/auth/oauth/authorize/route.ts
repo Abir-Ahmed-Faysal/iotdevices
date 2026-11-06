@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { authenticate, createOAuthCode, getAdminUsername } from "../../../../../lib/auth";
+import { authenticate, constantTimeStringEqual, createOAuthCode, getAdminUsername, getOAuthClientId } from "../../../../../lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
-  const clientId = searchParams.get("client_id") || "google-home-client";
+  const clientId = searchParams.get("client_id");
   const redirectUri = searchParams.get("redirect_uri");
   const state = searchParams.get("state") || "";
   const responseType = searchParams.get("response_type");
@@ -16,6 +16,9 @@ export async function GET(request: NextRequest) {
   }
   if (!redirectUri) {
     return NextResponse.json({ error: "Missing redirect_uri parameter." }, { status: 400 });
+  }
+  if (!clientId || !constantTimeStringEqual(clientId, getOAuthClientId())) {
+    return NextResponse.json({ error: "Unknown OAuth client." }, { status: 401 });
   }
 
   const authenticatedUser = authenticate(request);

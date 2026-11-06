@@ -360,7 +360,7 @@ private fun FaysalApp(api: IoTApi, autoStartVoice: Boolean = false, onVoiceConsu
                                         voiceMessage = if (voiceLanguage == "bn-BD") {
                                             "কমান্ড বোঝা যায়নি। 'হে জয়', 'মোটর ১ चालू করো' বা 'রিলে বন্ধ করো' বলুন।"
                                         } else {
-                                            "Command not recognized. Try 'Hey Joy', 'Turn on motor 1', or 'Turn off relay'."
+                                            "Command not recognized. Try 'Hey FishVoice', 'Turn on motor 1', or 'Turn off relay'."
                                         }
                                     }
                                 }
@@ -383,7 +383,7 @@ private fun FaysalApp(api: IoTApi, autoStartVoice: Boolean = false, onVoiceConsu
                                 voiceMessage = if (voiceLanguage == "bn-BD") {
                                     "কমান্ড বোঝা যায়নি। 'হে জয়', 'মোটর ১ चालू করো' বা 'রিলে বন্ধ করো' বলুন।"
                                 } else {
-                                    "Command not recognized. Try 'Hey Joy', 'Turn on motor 1', or 'Turn off relay'."
+                                    "Command not recognized. Try 'Hey FishVoice', 'Turn on motor 1', or 'Turn off relay'."
                                 }
                             }
                         }
@@ -588,7 +588,7 @@ private fun DashboardScreen(
             val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE, voiceLanguage)
-                putExtra(RecognizerIntent.EXTRA_PROMPT, if (voiceLanguage == "bn-BD") "হে জয় বলুন বা কমান্ড দিন" else "Say Hey Joy or turn on motor")
+                putExtra(RecognizerIntent.EXTRA_PROMPT, if (voiceLanguage == "bn-BD") "হে জয় বলুন বা কমান্ড দিন" else "Say Hey FishVoice or turn on motor")
             }
             try {
                 speechIntentLauncher.launch(intent)
@@ -687,7 +687,7 @@ private fun DashboardScreen(
 
             Panel(title = "App & Background Settings") {
                 Text(
-                    "Network transport, background service & Joy Voice Assistant",
+                    "Network transport, background service & FishVoice Voice Assistant",
                     color = Muted,
                     fontSize = 13.sp,
                 )
@@ -738,7 +738,7 @@ private fun DashboardScreen(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Joy Wake Word (\"Hey Joy\" / \"হে জয়\")", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                        Text("FishVoice Wake Word (\"Hey FishVoice\" / \"হে জয়\")", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                         Text(
                             "Activates voice greeting (\"Yes Faysal\") & command confirmation",
                             color = Muted,
@@ -779,7 +779,7 @@ private fun DashboardScreen(
                         value = manualVoiceText,
                         onValueChange = { manualVoiceText = it },
                         modifier = Modifier.weight(1f),
-                        placeholder = { Text(if (voiceLanguage == "bn-BD") "কমান্ড টাইপ করুন (যেমন: হে জয়, মোটর ১ चालू করো)" else "Type command (e.g. Hey Joy, turn on motor 1)") },
+                        placeholder = { Text(if (voiceLanguage == "bn-BD") "কমান্ড টাইপ করুন (যেমন: হে জয়, মোটর ১ चालू করো)" else "Type command (e.g. Hey FishVoice, turn on motor 1)") },
                         singleLine = true,
                     )
                     Button(

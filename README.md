@@ -1,6 +1,6 @@
-# JOY IoT / Faysal IoT
+# FishVoice IoT / Faysal IoT
 
-JOY IoT (also named Faysal IoT) is a production-grade, multi-tier smart relay control platform. The architecture comprises an **ESP32 WT32-ETH01 firmware**, a **Next.js App Router serverless backend** deployed on Vercel with PostgreSQL persistence (Neon DB), and a **Native Kotlin Jetpack Compose Android app**.
+FishVoice IoT (also named Faysal IoT) is a production-grade, multi-tier smart relay control platform. The architecture comprises an **ESP32 WT32-ETH01 firmware**, a **Next.js App Router serverless backend** deployed on Vercel with PostgreSQL persistence (Neon DB), and a **Native Kotlin Jetpack Compose Android app**.
 
 ---
 
@@ -36,7 +36,7 @@ The firmware ([main.cpp](file:///C:/WorkSpace/ardino/arduino/src/main.cpp)) impl
 
 1. **Primary Interface**: Ethernet LAN8720 RMII PHY (`ETH_PHY_ADDR = 1`, `ETH_PHY_POWER = 16`, `ETH_PHY_MDC = 23`, `ETH_PHY_MDIO = 18`, `ETH_CLK_MODE = ETH_CLOCK_GPIO0_IN`).
 2. **Secondary Backup**: 2.4 GHz Wi-Fi STA mode (`WIFI_SSID` / `WIFI_PASSWORD`).
-3. **Emergency SoftAP Fallback**: Emergency Wi-Fi Access Point (`JOY-IoT-Setup` / `faysaliotsetup`, IP `192.168.4.1`) automatically enabled if both Ethernet and Wi-Fi STA fail for > 15s.
+3. **Emergency SoftAP Fallback**: Emergency Wi-Fi Access Point (`FishVoice-IoT-Setup` / `faysaliotsetup`, IP `192.168.4.1`) automatically enabled if both Ethernet and Wi-Fi STA fail for > 15s.
 4. **Safety & Auto-Recovery**: Network transitions maintain current relay state (no relay toggling during failover). When Primary Ethernet or Secondary Wi-Fi STA link recovers, the firmware automatically disables SoftAP and returns to the primary network.
 
 ### Flashing Firmware
@@ -78,7 +78,7 @@ Built with Kotlin and Jetpack Compose targeting Android SDK 37 (targetSdk 36, mi
 - **[IoTBackgroundService.kt](file:///C:/WorkSpace/ardino/android/app/src/main/java/com/faysaliot/control/universal/IoTBackgroundService.kt)** — Foreground service (`foregroundServiceType="dataSync|microphone"`) polling status and handling background speech detection.
 - **[IoTBootReceiver.kt](file:///C:/WorkSpace/ardino/android/app/src/main/java/com/faysaliot/control/universal/IoTBootReceiver.kt)** — `ACTION_BOOT_COMPLETED` receiver auto-starting background service on boot.
 - **[VoiceAssistantManager.kt](file:///C:/WorkSpace/ardino/android/app/src/main/java/com/faysaliot/control/universal/VoiceAssistantManager.kt)** — Text-To-Speech engine in Bengali (`bn-BD`) & English (`en-US`), audio focus ducking, and intent parser.
-- **[JoyTileService.kt](file:///C:/WorkSpace/ardino/android/app/src/main/java/com/faysaliot/control/universal/JoyTileService.kt)** — Quick Settings Tile for 1-tap voice control from top notification shade.
+- **[FishVoiceTileService.kt](file:///C:/WorkSpace/ardino/android/app/src/main/java/com/faysaliot/control/universal/FishVoiceTileService.kt)** — Quick Settings Tile for 1-tap voice control from top notification shade.
 
 ### Building Android App
 ```powershell

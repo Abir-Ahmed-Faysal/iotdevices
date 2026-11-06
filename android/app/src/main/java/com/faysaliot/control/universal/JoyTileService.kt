@@ -6,7 +6,7 @@ import android.os.Build
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 
-class JoyTileService : TileService() {
+class FishVoiceTileService : TileService() {
 
     override fun onStartListening() {
         super.onStartListening()
@@ -35,7 +35,7 @@ class JoyTileService : TileService() {
 
     private fun updateTileState() {
         val tile = qsTile ?: return
-        tile.label = "Joy Voice"
+        tile.label = "FishVoice Voice"
         tile.state = Tile.STATE_ACTIVE
         tile.updateTile()
     }

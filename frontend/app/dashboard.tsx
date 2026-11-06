@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
+import Image from "next/image";
 
 type DeviceStatus = {
   name?: string;
@@ -330,15 +331,15 @@ export default function Dashboard() {
   return (
     <main className="shell">
       <header className="topbar">
-        <a className="brand" href="/" aria-label="Faysal IoT home">
-          <span className="brand-mark" aria-hidden="true">F</span>
-          <span><strong>Faysal</strong><small>IoT Control</small></span>
+        <a className="brand" href="/" aria-label="FishVoice IoT home">
+          <Image className="brand-logo" src="/fishvoice-logo.png" width={768} height={768} alt="" priority />
+          <span><strong>FishVoice</strong><small>IoT Control</small></span>
         </a>
         <div className="topbar-status">
           <span className={`dot ${online ? "dot-online" : authenticated ? "dot-offline" : "dot-muted"}`} />
           <span>{checkingSession ? "Checking session" : online ? "Connected" : authenticated ? "Device offline" : "Secure dashboard"}</span>
           <span className="divider" aria-hidden="true" />
-          <span id="clock">{clock || "Faysal IoT"}</span>
+          <span id="clock">{clock || "FishVoice IoT"}</span>
         </div>
       </header>
 
@@ -350,10 +351,10 @@ export default function Dashboard() {
       ) : !authenticated ? (
         <section className="login-view">
           <div className="login-card">
-            <div className="brand-mark brand-mark-large" aria-hidden="true">F</div>
+            <Image className="brand-logo brand-logo-large" src="/fishvoice-logo.png" width={768} height={768} alt="" priority />
             <p className="eyebrow">PRIVATE DEVICE DASHBOARD</p>
             <h1>Welcome back</h1>
-            <p className="muted">Sign in to control your Faysal IoT device.</p>
+            <p className="muted">Sign in to control your FishVoice IoT device.</p>
             <form onSubmit={signIn}>
               <label htmlFor="username">Username</label>
               <input
@@ -386,7 +387,7 @@ export default function Dashboard() {
           <div className="page-heading">
             <div>
               <p className="eyebrow">DEVICE OVERVIEW</p>
-              <h1>Faysal IoT Relay Controller</h1>
+              <h1>FishVoice IoT Relay Controller</h1>
               <p className="muted">Control and monitor your device securely.</p>
             </div>
             <button className="button button-quiet" type="button" onClick={signOut} disabled={busy}>
@@ -484,7 +485,7 @@ export default function Dashboard() {
               <p className="muted">{status?.lastSeen ? `Last update ${new Date(status.lastSeen).toLocaleTimeString()}` : "Status updates appear here."}</p>
             </article>
           </section>
-          <footer>Faysal IoT · Secure sign-in required · No relay module connected yet</footer>
+          <footer>FishVoice IoT · Secure sign-in required · No relay module connected yet</footer>
         </>
       )}
     </main>

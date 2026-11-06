@@ -65,7 +65,7 @@ class IoTBackgroundService : Service() {
             return START_NOT_STICKY
         }
 
-        val notification = buildNotification("Faysal IoT Monitor", "Background monitoring & Huawei / Joy Voice active")
+        val notification = buildNotification("Faysal IoT Monitor", "Background monitoring & Huawei / FishVoice Voice active")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             startForeground(
                 NOTIFICATION_ID,
@@ -144,7 +144,7 @@ class IoTBackgroundService : Service() {
                     assistantState = STATE_AWAITING_COMMAND
                     val lang = IoTSettings.getVoiceLanguage(applicationContext)
                     val greeting = VoiceAssistantManager.getGreetingText(lang)
-                    updateNotification("Huawei / Joy Assistant", greeting)
+                    updateNotification("Huawei / FishVoice Assistant", greeting)
                     voiceAssistant?.speak(greeting)
                 }
             }
@@ -251,14 +251,14 @@ class IoTBackgroundService : Service() {
                     pendingTarget = intent.second
                     assistantState = STATE_AWAITING_CONFIRMATION
                     val prompt = VoiceAssistantManager.getConfirmationPromptText(intent.first, intent.second, lang)
-                    updateNotification("Joy Voice Assistant", prompt)
+                    updateNotification("FishVoice Voice Assistant", prompt)
                     voiceAssistant?.speak(prompt) {
                         scheduleNextListen(500)
                     }
                 } else if (hasWakeWord) {
                     assistantState = STATE_AWAITING_COMMAND
                     val greeting = VoiceAssistantManager.getGreetingText(lang)
-                    updateNotification("Joy Voice Assistant", greeting)
+                    updateNotification("FishVoice Voice Assistant", greeting)
                     voiceAssistant?.speak(greeting) {
                         scheduleNextListen(500)
                     }
@@ -267,7 +267,7 @@ class IoTBackgroundService : Service() {
                     pendingTarget = intent.second
                     assistantState = STATE_AWAITING_CONFIRMATION
                     val prompt = VoiceAssistantManager.getConfirmationPromptText(intent.first, intent.second, lang)
-                    updateNotification("Joy Voice Assistant", prompt)
+                    updateNotification("FishVoice Voice Assistant", prompt)
                     voiceAssistant?.speak(prompt) {
                         scheduleNextListen(500)
                     }
@@ -283,7 +283,7 @@ class IoTBackgroundService : Service() {
                     pendingTarget = intent.second
                     assistantState = STATE_AWAITING_CONFIRMATION
                     val prompt = VoiceAssistantManager.getConfirmationPromptText(intent.first, intent.second, lang)
-                    updateNotification("Joy Voice Assistant", prompt)
+                    updateNotification("FishVoice Voice Assistant", prompt)
                     voiceAssistant?.speak(prompt) {
                         scheduleNextListen(500)
                     }
@@ -294,7 +294,7 @@ class IoTBackgroundService : Service() {
                         pendingTarget = "Device Output"
                         assistantState = STATE_AWAITING_CONFIRMATION
                         val prompt = VoiceAssistantManager.getConfirmationPromptText(fallbackAction, "Device Output", lang)
-                        updateNotification("Joy Voice Assistant", prompt)
+                        updateNotification("FishVoice Voice Assistant", prompt)
                         voiceAssistant?.speak(prompt) {
                             scheduleNextListen(500)
                         }
@@ -336,7 +336,7 @@ class IoTBackgroundService : Service() {
                         assistantState = STATE_IDLE
                         pendingAction = null
                         val cancelMsg = VoiceAssistantManager.getCancelResultText(lang)
-                        updateNotification("Joy Voice Assistant", cancelMsg)
+                        updateNotification("FishVoice Voice Assistant", cancelMsg)
                         voiceAssistant?.speak(cancelMsg) {
                             scheduleNextListen(1000)
                         }
@@ -372,7 +372,7 @@ class IoTBackgroundService : Service() {
                 "Faysal IoT Service",
                 NotificationManager.IMPORTANCE_LOW,
             ).apply {
-                description = "Background device monitoring service & hands-free Joy assistant"
+                description = "Background device monitoring service & hands-free FishVoice assistant"
             }
             val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             manager.createNotificationChannel(channel)
@@ -391,7 +391,7 @@ class IoTBackgroundService : Service() {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(title)
             .setContentText(contentText)
-            .setSmallIcon(R.drawable.ic_launcher)
+            .setSmallIcon(R.drawable.fishvoice)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
