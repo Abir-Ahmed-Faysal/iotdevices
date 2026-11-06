@@ -145,6 +145,8 @@ private fun FaysalApp(api: IoTApi, autoStartVoice: Boolean = false, onVoiceConsu
     var backgroundServiceEnabled by remember { mutableStateOf(IoTSettings.isBackgroundServiceEnabled(context)) }
     var wakeWordEnabled by remember { mutableStateOf(IoTSettings.isWakeWordEnabled(context)) }
     var voiceLanguage by remember { mutableStateOf(IoTSettings.getVoiceLanguage(context)) }
+    var preferredTransport by remember { mutableStateOf(IoTSettings.getPreferredTransport(context)) }
+    var localDeviceIp by remember { mutableStateOf(IoTSettings.getLocalDeviceIp(context)) }
     var voiceMessage by remember { mutableStateOf("") }
 
     var pendingVoiceAction by remember { mutableStateOf<String?>(null) }
@@ -157,7 +159,7 @@ private fun FaysalApp(api: IoTApi, autoStartVoice: Boolean = false, onVoiceConsu
 
     suspend fun refreshStatus() {
         try {
-            status = api.deviceStatus()
+            status = api.smartDeviceStatus()
             deviceError = ""
             status?.activityWarning?.let { activityError = it }
         } catch (error: Exception) {
@@ -191,12 +193,14 @@ private fun FaysalApp(api: IoTApi, autoStartVoice: Boolean = false, onVoiceConsu
         busy = true
         deviceError = ""
         try {
-            val warning = api.setDeviceState(action)
-            status = api.deviceStatus()
-            val page = api.activities()
-            activity.clear()
-            activity.addAll(page.entries)
-            activityCursor = page.nextCursor
+            val warning = api.smartSetDeviceState(action)
+            status = api.smartDeviceStatus()
+            runCatching {
+                val page = api.activities()
+                activity.clear()
+                activity.addAll(page.entries)
+                activityCursor = page.nextCursor
+            }
             activityError = warning ?: status?.activityWarning.orEmpty()
             val resultMsg = VoiceAssistantManager.getSuccessResultText(action, target, voiceLanguage)
             voiceMessage = resultMsg
@@ -276,6 +280,8 @@ private fun FaysalApp(api: IoTApi, autoStartVoice: Boolean = false, onVoiceConsu
             runtimeError = runtimeError,
             backgroundServiceEnabled = backgroundServiceEnabled,
             wakeWordEnabled = wakeWordEnabled,
+            preferredTransport = preferredTransport,
+            localDeviceIp = localDeviceIp,
             onToggleBackgroundService = { enabled ->
                 backgroundServiceEnabled = enabled
                 IoTSettings.setBackgroundServiceEnabled(context, enabled)
@@ -288,6 +294,15 @@ private fun FaysalApp(api: IoTApi, autoStartVoice: Boolean = false, onVoiceConsu
             onToggleWakeWord = { enabled ->
                 wakeWordEnabled = enabled
                 IoTSettings.setWakeWordEnabled(context, enabled)
+            },
+            onTransportChange = { mode ->
+                preferredTransport = mode
+                IoTSettings.setPreferredTransport(context, mode)
+                scope.launch { refreshStatus() }
+            },
+            onLocalIpChange = { ip ->
+                localDeviceIp = ip
+                IoTSettings.setLocalDeviceIp(context, ip)
             },
             voiceMessage = voiceMessage,
             voiceLanguage = voiceLanguage,
@@ -524,8 +539,12 @@ private fun DashboardScreen(
     runtimeError: String,
     backgroundServiceEnabled: Boolean,
     wakeWordEnabled: Boolean,
+    preferredTransport: String,
+    localDeviceIp: String,
     onToggleBackgroundService: (Boolean) -> Unit,
     onToggleWakeWord: (Boolean) -> Unit,
+    onTransportChange: (String) -> Unit,
+    onLocalIpChange: (String) -> Unit,
     voiceMessage: String,
     voiceLanguage: String,
     onVoiceLanguageChange: (String) -> Unit,
@@ -620,7 +639,11 @@ private fun DashboardScreen(
             SummaryCard(
                 title = "Connection",
                 value = if (status?.online == true) "Online" else "Offline",
-                detail = if (status?.online == true) "Connected to device" else "Waiting for device",
+                detail = when (status?.transport) {
+                    "local_lan" -> "Direct Local LAN (${status.ip})"
+                    "soft_ap" -> "Emergency SoftAP (${status.ip})"
+                    else -> if (status?.online == true) "Cloud MQTTS (${status.ip})" else "Waiting for device"
+                },
                 accent = if (status?.online == true) Green else ErrorRed,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -664,11 +687,27 @@ private fun DashboardScreen(
 
             Panel(title = "App & Background Settings") {
                 Text(
-                    "Background service & Joy Voice Assistant",
+                    "Network transport, background service & Joy Voice Assistant",
                     color = Muted,
                     fontSize = 13.sp,
                 )
                 Spacer(Modifier.height(10.dp))
+                Text("Transport Mode", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                Spacer(Modifier.height(4.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    TransportButton("Auto Smart", preferredTransport == "auto") { onTransportChange("auto") }
+                    TransportButton("Cloud MQTTS", preferredTransport == "cloud") { onTransportChange("cloud") }
+                    TransportButton("Local Direct", preferredTransport == "local") { onTransportChange("local") }
+                }
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = localDeviceIp,
+                    onValueChange = onLocalIpChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Local Device IP / SoftAP") },
+                    singleLine = true,
+                )
+                Spacer(Modifier.height(12.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -1052,3 +1091,12 @@ private fun formatDate(value: String): String = runCatching {
     val date = javax.xml.datatype.DatatypeFactory.newInstance().newXMLGregorianCalendar(value).toGregorianCalendar().time
     DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(date)
 }.getOrDefault(value)
+
+@Composable
+private fun TransportButton(label: String, selected: Boolean, onClick: () -> Unit) {
+    if (selected) {
+        Button(onClick = onClick) { Text(label, fontSize = 12.sp) }
+    } else {
+        OutlinedButton(onClick = onClick) { Text(label, fontSize = 12.sp) }
+    }
+}
