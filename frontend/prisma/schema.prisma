@@ -1,0 +1,40 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DB_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model ActivityEvent {
+  id        BigInt   @id @default(autoincrement())
+  eventType String   @map("event_type") @db.VarChar(32)
+  message   String   @db.VarChar(240)
+  deviceId  String?  @map("device_id") @db.VarChar(64)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([createdAt(sort: Desc)])
+  @@map("activity_events")
+}
+
+model DeviceActivityState {
+  deviceId      String   @id @map("device_id") @db.VarChar(64)
+  online        Boolean
+  uptimeSeconds Int?     @map("uptime_seconds")
+  outputState   String?  @map("output_state") @db.VarChar(16)
+  updatedAt     DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  @@map("device_activity_state")
+}
+
+model DeviceRuntimeDaily {
+  deviceId      String   @map("device_id") @db.VarChar(64)
+  day           DateTime @db.Date
+  onlineSeconds Int      @default(0) @map("online_seconds")
+  relayOnSeconds Int     @default(0) @map("relay_on_seconds")
+
+  @@id([deviceId, day])
+  @@map("device_runtime_daily")
+}
