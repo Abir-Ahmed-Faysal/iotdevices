@@ -191,7 +191,10 @@ export async function getDeviceStatus() {
   }
 }
 
-export async function setDeviceState(action: "on" | "off") {
+export async function setDeviceState(action: "on" | "off", relayIndex = 1) {
+  if (!Number.isSafeInteger(relayIndex) || relayIndex < 1 || relayIndex > 4) {
+    throw new DeviceOperationError("Relay index must be between 1 and 4.", 400);
+  }
   if (getControlMode() === "local") {
     return requestLocalDevice(`/${action}`);
   }
@@ -231,7 +234,7 @@ export async function setDeviceState(action: "on" | "off") {
         }
         client.publish(
           `faysal-iot/v1/devices/${config.deviceId}/command`,
-          JSON.stringify({ requestId, action }),
+          JSON.stringify({ requestId, action, relayIndex }),
           { qos: 1, retain: false },
           (publishError) => {
             if (publishError) {
