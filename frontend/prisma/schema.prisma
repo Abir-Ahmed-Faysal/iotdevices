@@ -9,61 +9,159 @@ datasource db {
 }
 
 model ActivityEvent {
-  id        BigInt   @id @default(autoincrement())
-  eventType String   @map("event_type") @db.VarChar(32)
-  message   String   @db.VarChar(240)
-  deviceId  String?  @map("device_id") @db.VarChar(64)
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  id         BigInt   @id @default(autoincrement())
+  eventType  String   @map("event_type") @db.VarChar(32)
+  message    String   @db.VarChar(240)
+  deviceId   String?  @map("device_id") @db.VarChar(64)
+  userId     String?  @map("user_id") @db.Uuid
+  deviceUuid String?  @map("device_uuid") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  device     Device?  @relation(fields: [deviceUuid], references: [id], onDelete: SetNull)
 
   @@index([createdAt(sort: Desc)])
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([deviceUuid, createdAt(sort: Desc)])
   @@map("activity_events")
 }
 
 model DeviceActivityState {
   deviceId      String   @id @map("device_id") @db.VarChar(64)
+  deviceUuid    String?  @map("device_uuid") @db.Uuid
   online        Boolean
   uptimeSeconds Int?     @map("uptime_seconds")
   outputState   String?  @map("output_state") @db.VarChar(16)
   updatedAt     DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+  device        Device?  @relation(fields: [deviceUuid], references: [id], onDelete: SetNull)
 
+  @@index([deviceUuid])
   @@map("device_activity_state")
 }
 
 model DeviceRuntimeDaily {
   deviceId      String   @map("device_id") @db.VarChar(64)
+  deviceUuid    String?  @map("device_uuid") @db.Uuid
   day           DateTime @db.Date
   onlineSeconds Int      @default(0) @map("online_seconds")
   relayOnSeconds Int     @default(0) @map("relay_on_seconds")
+  device        Device?  @relation(fields: [deviceUuid], references: [id], onDelete: SetNull)
 
   @@id([deviceId, day])
+  @@index([deviceUuid, day])
   @@map("device_runtime_daily")
 }
 
 model OAuthAuthorizationCode {
   codeHash    String    @id @map("code_hash") @db.Char(64)
   username    String    @db.VarChar(128)
+  userId      String?   @map("user_id") @db.Uuid
   clientId    String    @map("client_id") @db.VarChar(255)
   redirectUri String    @map("redirect_uri") @db.VarChar(2048)
   expiresAt   DateTime  @map("expires_at") @db.Timestamptz(6)
   consumedAt  DateTime? @map("consumed_at") @db.Timestamptz(6)
   createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  user        User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([expiresAt])
+  @@index([userId])
   @@map("oauth_authorization_codes")
 }
 
 model OAuthGrant {
   id               String    @id @db.Uuid
   username         String    @db.VarChar(128)
+  userId           String?   @map("user_id") @db.Uuid
   clientId         String    @map("client_id") @db.VarChar(255)
   refreshTokenHash String    @unique @map("refresh_token_hash") @db.Char(64)
   expiresAt        DateTime  @map("expires_at") @db.Timestamptz(6)
   revokedAt        DateTime? @map("revoked_at") @db.Timestamptz(6)
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  user             User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([username, clientId])
+  @@index([userId, clientId])
   @@index([expiresAt])
   @@map("oauth_grants")
+}
+
+model User {
+  id                   String                 @id @default(uuid()) @db.Uuid
+  username             String                 @unique @db.VarChar(128)
+  createdAt            DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+  ownedHomes           Home[]                 @relation("HomeOwner")
+  memberships          HomeMembership[]
+  activityEvents       ActivityEvent[]
+  oauthCodes           OAuthAuthorizationCode[]
+  oauthGrants          OAuthGrant[]
+
+  @@map("users")
+}
+
+model Home {
+  id          String           @id @default(uuid()) @db.Uuid
+  name        String           @db.VarChar(120)
+  timezone    String           @default("Asia/Dhaka") @db.VarChar(64)
+  ownerUserId String           @map("owner_user_id") @db.Uuid
+  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+  owner       User             @relation("HomeOwner", fields: [ownerUserId], references: [id], onDelete: Restrict)
+  members     HomeMembership[]
+  devices     Device[]
+
+  @@unique([ownerUserId, name])
+  @@index([ownerUserId])
+  @@map("homes")
+}
+
+model HomeMembership {
+  homeId    String   @map("home_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  role      String   @default("owner") @db.VarChar(24)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  home      Home     @relation(fields: [homeId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([homeId, userId])
+  @@index([userId])
+  @@map("home_memberships")
+}
+
+model Device {
+  id                  String                @id @default(uuid()) @db.Uuid
+  deviceId            String                @unique @map("device_id") @db.VarChar(64)
+  homeId              String                @map("home_id") @db.Uuid
+  name                String                @db.VarChar(120)
+  brokerCredentialRef String?               @map("broker_credential_ref") @db.VarChar(255)
+  online              Boolean               @default(false)
+  uptimeSeconds       Int?                  @map("uptime_seconds")
+  lastSeen            DateTime?             @map("last_seen") @db.Timestamptz(6)
+  createdAt           DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
+  home                Home                  @relation(fields: [homeId], references: [id], onDelete: Restrict)
+  relays              Relay[]
+  activityEvents      ActivityEvent[]
+  activityStates      DeviceActivityState[]
+  runtimeDays         DeviceRuntimeDaily[]
+
+  @@index([homeId, deviceId])
+  @@map("devices")
+}
+
+model Relay {
+  id          String   @id @default(uuid()) @db.Uuid
+  deviceId    String   @map("device_id") @db.Uuid
+  relayIndex  Int      @map("relay_index")
+  gpio        Int
+  activeLow   Boolean  @default(false) @map("active_low")
+  name        String   @db.VarChar(120)
+  state       String   @default("unknown") @db.VarChar(16)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  device      Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@unique([deviceId, relayIndex])
+  @@unique([deviceId, gpio])
+  @@map("relays")
 }
 
 model ApiRateLimit {
