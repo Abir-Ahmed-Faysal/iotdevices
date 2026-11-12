@@ -1,8 +1,10 @@
-import { Prisma } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "./prisma";
 
 type DeviceObservation = {
   deviceId: string;
+  deviceUuid: string;
+  userId: string;
   online: boolean;
   uptime?: number | null;
   state?: "on" | "off" | "unknown";
@@ -14,6 +16,7 @@ const DHAKA_OFFSET_MS = 6 * 60 * 60 * 1000;
 async function addRuntimeSeconds(
   transaction: Prisma.TransactionClient,
   deviceId: string,
+  deviceUuid: string,
   startMs: number,
   endMs: number,
   relayWasOn: boolean,
@@ -34,6 +37,7 @@ async function addRuntimeSeconds(
         where: { deviceId_day: { deviceId, day } },
         create: {
           deviceId,
+          deviceUuid,
           day,
           onlineSeconds: seconds,
           relayOnSeconds: relayWasOn ? seconds : 0,
@@ -95,6 +99,7 @@ export async function recordDeviceObservation(observation: DeviceObservation) {
         await addRuntimeSeconds(
           transaction,
           observation.deviceId,
+          observation.deviceUuid,
           previous.updatedAt.getTime(),
           observedAt.getTime(),
           previous.outputState === "on" && observation.state === "on",
@@ -108,6 +113,8 @@ export async function recordDeviceObservation(observation: DeviceObservation) {
           eventType: "device",
           message,
           deviceId: observation.deviceId,
+          deviceUuid: observation.deviceUuid,
+          userId: observation.userId,
         })),
       });
     }
@@ -116,16 +123,35 @@ export async function recordDeviceObservation(observation: DeviceObservation) {
       where: { deviceId: observation.deviceId },
       create: {
         deviceId: observation.deviceId,
+        deviceUuid: observation.deviceUuid,
         online: observation.online,
         uptimeSeconds,
         outputState: observation.state === "unknown" ? null : observation.state,
       },
       update: {
+        deviceUuid: observation.deviceUuid,
         online: observation.online,
         updatedAt: observedAt,
         ...(uptimeSeconds === null ? {} : { uptimeSeconds }),
         ...(observation.state === "unknown" ? {} : { outputState: observation.state }),
       },
     });
+    await transaction.device.update({
+      where: { id: observation.deviceUuid },
+      data: {
+        online: observation.online,
+        ...(uptimeSeconds === null ? {} : { uptimeSeconds }),
+        lastSeen: observation.online ? observedAt : undefined,
+      },
+    });
+    if (observation.state === "on" || observation.state === "off") {
+      await transaction.relay.updateMany({
+        where: {
+          deviceId: observation.deviceUuid,
+          relayIndex: 1,
+        },
+        data: { state: observation.state },
+      });
+    }
   });
 }

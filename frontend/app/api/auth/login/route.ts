@@ -79,8 +79,16 @@ export async function POST(request: NextRequest) {
 
   let activityWarning: string | undefined;
   try {
+    const user = await prisma.user.findUnique({
+      where: { username: expectedUsername },
+      select: { id: true },
+    });
     await prisma.activityEvent.create({
-      data: { eventType: "login", message: "Signed in to the dashboard" },
+      data: {
+        eventType: "login",
+        message: "Signed in to the dashboard",
+        ...(user ? { userId: user.id } : {}),
+      },
     });
   } catch (error) {
     console.error("Could not record dashboard sign-in:", error);

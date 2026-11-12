@@ -4,7 +4,13 @@ import {
   revokeOAuthGrant,
   verifyOAuthToken,
 } from "../../../../lib/auth";
-import { getDeviceStatus, setDeviceState } from "../../../../lib/mqtt-device";
+import {
+  buildGoogleSyncDevices,
+  listOwnedDevices,
+  resolveGoogleExecutionTargets,
+  resolveGoogleTarget,
+} from "../../../../lib/device-inventory";
+import { setDeviceState } from "../../../../lib/mqtt-device";
 import { prisma } from "../../../../lib/prisma";
 
 export const runtime = "nodejs";
@@ -63,15 +69,6 @@ async function readFulfillmentBody(request: NextRequest) {
   }
 }
 
-function relayIndexForTarget(targetId: unknown, deviceId: string) {
-  if (targetId === deviceId) return 1;
-  if (typeof targetId !== "string") return null;
-  const prefix = `${deviceId}:relay`;
-  if (!targetId.startsWith(prefix)) return null;
-  const index = Number(targetId.slice(prefix.length));
-  return Number.isSafeInteger(index) && index === 1 ? index : null;
-}
-
 async function authenticateGoogleRequest(request: NextRequest) {
   const authHeader = request.headers.get("authorization") || "";
   if (!authHeader.startsWith("Bearer ")) return null;
@@ -83,7 +80,11 @@ async function authenticateGoogleRequest(request: NextRequest) {
   if (!await isOAuthGrantActive(verified.grantId, verified.username, verified.clientId)) {
     return null;
   }
-  return verified;
+  const user = await prisma.user.findUnique({
+    where: { username: verified.username },
+    select: { id: true },
+  });
+  return user ? { ...verified, userId: user.id } : null;
 }
 
 export async function POST(request: NextRequest) {
@@ -117,7 +118,6 @@ export async function POST(request: NextRequest) {
   if (typeof requestId !== "string" || requestId.length === 0 || requestId.length > 256) {
     return NextResponse.json({ error: "Invalid Google Smart Home request ID." }, { status: 400 });
   }
-  const deviceId = process.env.MQTT_DEVICE_ID?.trim() || "faysal-iot-001";
   const input = body.inputs[0];
   if (!isRecord(input) || typeof input.intent !== "string") {
     return NextResponse.json({ error: "Invalid Google Smart Home intent." }, { status: 400 });
@@ -125,58 +125,52 @@ export async function POST(request: NextRequest) {
   const intent = input.intent;
 
   if (intent === "action.devices.SYNC") {
-    return NextResponse.json({
-      requestId,
-      payload: {
-        agentUserId: token.username,
-        devices: [
-          {
-            id: deviceId,
-            type: "action.devices.types.SWITCH",
-            traits: ["action.devices.traits.OnOff"],
-            name: {
-              defaultNames: ["Faysal IoT Relay Controller"],
-              name: "Motor 1",
-              nicknames: ["Motor 1", "Motor", "Main Relay", "Pump", "Switch"],
-            },
-            willReportState: false,
-            deviceInfo: {
-              manufacturer: "Faysal IoT",
-              model: "WT32-ETH01 Smart Relay Controller",
-              hwVersion: "1.4",
-              swVersion: "1.0.0",
-            },
-          },
-        ],
-      },
-    });
+    try {
+      const devices = await listOwnedDevices(token.userId);
+      return NextResponse.json({
+        requestId,
+        payload: {
+          agentUserId: token.userId,
+          devices: buildGoogleSyncDevices(devices),
+        },
+      });
+    } catch (error) {
+      console.error("Could not load Google Home device inventory:", error);
+      return NextResponse.json({ error: "Google Home device inventory is unavailable." }, { status: 503 });
+    }
   }
 
   if (intent === "action.devices.QUERY") {
+    const payload = isRecord(input.payload) ? input.payload : null;
+    const requestedDevices = payload?.devices;
+    if (!Array.isArray(requestedDevices) || requestedDevices.length === 0) {
+      return NextResponse.json({ error: "Invalid QUERY devices." }, { status: 400 });
+    }
     try {
-      const status = await getDeviceStatus();
+      const devices = await listOwnedDevices(token.userId);
+      const states: Record<string, Record<string, boolean | string>> = {};
+      for (const requested of requestedDevices) {
+        const targetId = isRecord(requested) && typeof requested.id === "string"
+          ? requested.id
+          : "";
+        const target = targetId ? resolveGoogleTarget(devices, targetId) : null;
+        if (!target) {
+          states[targetId || "unknown"] = { online: false, errorCode: "deviceNotFound" };
+          continue;
+        }
+        const stateKnown = target.relay.state === "on" || target.relay.state === "off";
+        states[targetId] = {
+          online: target.device.online && stateKnown,
+          ...(stateKnown ? { on: target.relay.state === "on" } : {}),
+        };
+      }
       return NextResponse.json({
         requestId,
-        payload: {
-          devices: {
-            [deviceId]: {
-              online: status.online,
-              on: status.state === "on",
-            },
-          },
-        },
+        payload: { devices: states },
       });
-    } catch {
-      return NextResponse.json({
-        requestId,
-        payload: {
-          devices: {
-            [deviceId]: {
-              online: false,
-            },
-          },
-        },
-      });
+    } catch (error) {
+      console.error("Could not query Google Home device state:", error);
+      return NextResponse.json({ error: "Google Home device state is unavailable." }, { status: 503 });
     }
   }
 
@@ -186,7 +180,12 @@ export async function POST(request: NextRequest) {
     if (!Array.isArray(commands)) {
       return NextResponse.json({ error: "Invalid EXECUTE commands." }, { status: 400 });
     }
-    const results: Array<{ ids: string[]; status: string; states?: Record<string, boolean>; errorCode?: string }> = [];
+    const results: Array<{
+      ids: string[];
+      status: string;
+      states?: Record<string, boolean>;
+      errorCode?: string;
+    }> = [];
 
     for (const commandItem of commands) {
       if (!isRecord(commandItem)) {
@@ -197,17 +196,21 @@ export async function POST(request: NextRequest) {
       const targetIds = Array.isArray(targetDevices)
         ? targetDevices.map((device) => isRecord(device) && typeof device.id === "string" ? device.id : "")
         : [];
-      const relayIndexes = targetIds.map((targetId) => relayIndexForTarget(targetId, deviceId));
+      let devices;
+      try {
+        devices = await listOwnedDevices(token.userId);
+      } catch (error) {
+        console.error("Could not load Google Home device inventory:", error);
+        results.push({ ids: targetIds, status: "ERROR", errorCode: "hardError" });
+        continue;
+      }
+      const targetResolution = resolveGoogleExecutionTargets(devices, targetIds);
       const executions = commandItem.execution;
-      if (
-        targetIds.length === 0 ||
-        targetIds.some((targetId) => !targetId) ||
-        relayIndexes.some((relayIndex) => relayIndex === null)
-      ) {
+      if ("errorCode" in targetResolution) {
         results.push({
           ids: targetIds,
           status: "ERROR",
-          errorCode: targetIds.some((targetId) => !targetId) ? "protocolError" : "deviceNotFound",
+          errorCode: targetResolution.errorCode,
         });
         continue;
       }
@@ -228,31 +231,62 @@ export async function POST(request: NextRequest) {
         }
 
         const action = params.on ? "on" : "off";
-        const relayIndex = relayIndexes[0];
-        if (relayIndex === null || relayIndex === undefined) {
-          results.push({ ids: targetIds, status: "ERROR", errorCode: "deviceNotFound" });
-          continue;
-        }
+        let failed = false;
         try {
-          const status = await setDeviceState(action, relayIndex);
-          runCatching(async () => {
-            await prisma.activityEvent.create({
-              data: {
-                eventType: "google_assistant",
-                message: `Google Assistant turned ${action.toUpperCase()} Motor 1`,
-                deviceId: status.deviceId,
-              },
+          for (const target of targetResolution.targets) {
+            const status = await setDeviceState(
+              action,
+              target.relay.relayIndex,
+              target.device.deviceId,
+            );
+            try {
+              await prisma.$transaction([
+                prisma.relay.update({
+                  where: {
+                    deviceId_relayIndex: {
+                      deviceId: target.device.id,
+                      relayIndex: target.relay.relayIndex,
+                    },
+                  },
+                  data: { state: action },
+                }),
+                prisma.device.update({
+                  where: { id: target.device.id },
+                  data: {
+                    online: status.online,
+                    ...(status.uptime === undefined || status.uptime === null
+                      ? {}
+                      : { uptimeSeconds: status.uptime }),
+                    ...(status.online ? { lastSeen: new Date() } : {}),
+                  },
+                }),
+                prisma.activityEvent.create({
+                  data: {
+                    eventType: "google_assistant",
+                    message: `Google Assistant turned ${target.relay.name} ${action.toUpperCase()}`,
+                    deviceId: target.device.deviceId,
+                    deviceUuid: target.device.id,
+                    userId: token.userId,
+                  },
+                }),
+              ]);
+            } catch (error) {
+              console.error("Could not persist Google Home device command state:", error);
+              failed = true;
+              break;
+            }
+          }
+          if (failed) {
+            results.push({ ids: targetIds, status: "ERROR", errorCode: "hardError" });
+          } else {
+            results.push({
+              ids: targetIds,
+              status: "SUCCESS",
+              states: { online: true, on: action === "on" },
             });
-          });
-          results.push({
-            ids: targetIds,
-            status: "SUCCESS",
-            states: {
-              online: status.online,
-              on: status.state === "on",
-            },
-          });
-        } catch {
+          }
+        } catch (error) {
+          console.error("Google Home device command failed:", error);
           results.push({
             ids: targetIds,
             status: "ERROR",
@@ -281,10 +315,4 @@ export async function POST(request: NextRequest) {
   }
 
   return NextResponse.json({ error: "Unsupported Smart Home intent." }, { status: 400 });
-}
-
-function runCatching(fn: () => Promise<void>) {
-  fn().catch((error) => {
-    console.error("Background task error:", error);
-  });
 }

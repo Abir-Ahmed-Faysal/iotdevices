@@ -169,6 +169,13 @@ export async function createOAuthCode(username: string, clientId: string, redire
   const now = new Date();
   const { prisma } = await import("./prisma");
   await prisma.$transaction(async (transaction) => {
+    const user = await transaction.user.findUnique({
+      where: { username },
+      select: { id: true },
+    });
+    if (!user) {
+      throw new Error("The authenticated account has not been provisioned in the device inventory.");
+    }
     await transaction.oAuthAuthorizationCode.deleteMany({
       where: { expiresAt: { lte: now } },
     });
@@ -176,6 +183,7 @@ export async function createOAuthCode(username: string, clientId: string, redire
       data: {
         codeHash: hashOpaqueToken(code),
         username,
+        userId: user.id,
         clientId,
         redirectUri,
         expiresAt: new Date(now.getTime() + OAUTH_CODE_TTL_SECONDS * 1000),
@@ -196,6 +204,7 @@ export async function exchangeOAuthCode(code: string, clientId: string, redirect
     });
     if (
       !authorization ||
+      !authorization.userId ||
       authorization.clientId !== clientId ||
       authorization.redirectUri !== redirectUri ||
       authorization.expiresAt <= now ||
@@ -226,6 +235,7 @@ export async function exchangeOAuthCode(code: string, clientId: string, redirect
       data: {
         id: grantId,
         username: authorization.username,
+        userId: authorization.userId,
         clientId,
         refreshTokenHash: hashOpaqueToken(refreshToken),
         expiresAt,
@@ -344,6 +354,7 @@ export async function isOAuthGrantActive(grantId: string, username: string, clie
       clientId,
       revokedAt: null,
       expiresAt: { gt: new Date() },
+      userId: { not: null },
     },
     select: { id: true },
   }));

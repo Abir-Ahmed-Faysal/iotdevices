@@ -13,6 +13,20 @@ type DeviceStatus = {
   transport?: "mqtt" | "local";
   lastSeen?: string | null;
   activityWarning?: string;
+  relays?: Array<{ relayIndex: number; name: string; state: "on" | "off" | "unknown" }>;
+};
+
+type HomeDevice = {
+  deviceId: string;
+  name: string;
+  online: boolean;
+  relays: Array<{
+    relayIndex: number;
+    name: string;
+    gpio: number;
+    activeLow: boolean;
+    state: "on" | "off" | "unknown";
+  }>;
 };
 
 type Activity = {
@@ -166,6 +180,9 @@ export default function Dashboard() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState<DeviceStatus | null>(null);
+  const [devices, setDevices] = useState<HomeDevice[]>([]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState("");
+  const [selectedRelayIndex, setSelectedRelayIndex] = useState(1);
   const [loginMessage, setLoginMessage] = useState("");
   const [deviceMessage, setDeviceMessage] = useState("");
   const [activityMessage, setActivityMessage] = useState("");
@@ -180,7 +197,8 @@ export default function Dashboard() {
 
   const refreshStatus = useCallback(async () => {
     try {
-      const nextStatus = await request<DeviceStatus>("/api/device/status");
+      const query = selectedDeviceId ? `?deviceId=${encodeURIComponent(selectedDeviceId)}` : "";
+      const nextStatus = await request<DeviceStatus>(`/api/device/status${query}`);
       setStatus(nextStatus);
       if (nextStatus.activityWarning) setActivityMessage(nextStatus.activityWarning);
       setDeviceMessage("");
@@ -192,6 +210,20 @@ export default function Dashboard() {
       }
       setDeviceMessage(requestError.message);
       setStatus((previous) => previous ? { ...previous, online: false } : null);
+    }
+  }, [selectedDeviceId]);
+
+  const refreshDevices = useCallback(async () => {
+    try {
+      const result = await request<{ defaultDeviceId: string | null; devices: HomeDevice[] }>("/api/devices");
+      setDevices(result.devices);
+      setSelectedDeviceId((current) => (
+        result.devices.some((device) => device.deviceId === current)
+          ? current
+          : result.defaultDeviceId || result.devices[0]?.deviceId || ""
+      ));
+    } catch (error) {
+      setDeviceMessage((error as Error).message);
     }
   }, []);
 
@@ -214,13 +246,14 @@ export default function Dashboard() {
 
   const refreshRuntime = useCallback(async () => {
     try {
-      const result = await request<{ months: RuntimeMonth[] }>("/api/device/runtime");
+      const query = selectedDeviceId ? `?deviceId=${encodeURIComponent(selectedDeviceId)}` : "";
+      const result = await request<{ months: RuntimeMonth[] }>(`/api/device/runtime${query}`);
       setRuntimeMonths(result.months);
       setRuntimeMessage("");
     } catch (error) {
       setRuntimeMessage((error as Error).message);
     }
-  }, []);
+  }, [selectedDeviceId]);
 
   async function loadOlderActivity() {
     if (!activityCursor || activityLoadingMore) return;
@@ -255,6 +288,7 @@ export default function Dashboard() {
     if (!authenticated) {
       return;
     }
+    void refreshDevices();
     void refreshStatus();
     void refreshActivity();
     void refreshRuntime();
@@ -266,7 +300,7 @@ export default function Dashboard() {
       window.clearInterval(activityTimer);
       window.clearInterval(runtimeTimer);
     };
-  }, [authenticated, refreshActivity, refreshRuntime, refreshStatus]);
+  }, [authenticated, refreshActivity, refreshDevices, refreshRuntime, refreshStatus]);
 
   async function signIn(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -309,6 +343,8 @@ export default function Dashboard() {
       await request("/api/auth/logout", { method: "POST" });
       setAuthenticated(false);
       setStatus(null);
+      setDevices([]);
+      setSelectedDeviceId("");
       setActivity([]);
       setActivityCursor(null);
       setActivityExpanded(false);
@@ -324,7 +360,11 @@ export default function Dashboard() {
     setBusy(true);
     setDeviceMessage("");
     try {
-      const nextStatus = await request<DeviceStatus>(`/api/device/${action}`, {
+      const query = new URLSearchParams({
+        relayIndex: String(selectedRelayIndex),
+        ...(selectedDeviceId ? { deviceId: selectedDeviceId } : {}),
+      });
+      const nextStatus = await request<DeviceStatus>(`/api/device/${action}?${query}`, {
         method: "POST",
       });
       setStatus(nextStatus);
@@ -338,7 +378,10 @@ export default function Dashboard() {
   }
 
   const online = status?.online === true;
-  const state = status?.state || "unknown";
+  const selectedRelay = status?.relays?.find((relay) => relay.relayIndex === selectedRelayIndex);
+  const state = selectedRelay?.state || status?.state || "unknown";
+  const selectedDevice = devices.find((device) => device.deviceId === selectedDeviceId);
+  const selectedRelayConfig = selectedDevice?.relays.find((relay) => relay.relayIndex === selectedRelayIndex);
   const connectionType = online
     ? status?.transport === "mqtt" ? "Cloud MQTT" : "Local Wi-Fi"
     : "Disconnected";
@@ -425,16 +468,47 @@ export default function Dashboard() {
             </article>
             <article className="summary-card">
               <span className="summary-icon icon-amber" aria-hidden="true">ϟ</span>
-              <div><span className="card-label">Output state</span><strong>{state.toUpperCase()}</strong><small>GPIO4 · relay not connected</small></div>
+              <div><span className="card-label">Output state</span><strong>{state.toUpperCase()}</strong><small>{selectedRelayConfig ? `GPIO${selectedRelayConfig.gpio}` : "Relay configuration"}</small></div>
             </article>
           </section>
 
           <section className="control-card">
             <div className="control-heading">
-              <div><p className="eyebrow">DEVICE CONTROL</p><h2>Relay output</h2><p className="muted">Choose an action. The device starts OFF after a restart.</p></div>
+              <div><p className="eyebrow">DEVICE CONTROL</p><h2>Relay output</h2><p className="muted">Choose a device and relay, then choose an action.</p></div>
               <span className={`badge ${online ? "badge-online" : "badge-muted"}`}>{online ? "Ready" : "Offline"}</span>
             </div>
             <div className="control-content">
+              <div className="inventory-selects">
+                <label>
+                  <span>Device</span>
+                  <select
+                    value={selectedDeviceId}
+                    onChange={(event) => {
+                      setSelectedDeviceId(event.target.value);
+                      setSelectedRelayIndex(1);
+                    }}
+                    disabled={devices.length === 0 || busy}
+                  >
+                    {devices.map((device) => (
+                      <option key={device.deviceId} value={device.deviceId}>{device.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>Relay</span>
+                  <select
+                    value={selectedRelayIndex}
+                    onChange={(event) => setSelectedRelayIndex(Number(event.target.value))}
+                    disabled={!selectedDevice || busy}
+                  >
+                    {selectedDevice?.relays.map((relay) => (
+                      <option key={relay.relayIndex} value={relay.relayIndex}>
+                        {relay.name} (GPIO{relay.gpio})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
               <div className="button-row">
                 <button className="button button-on" type="button" disabled={!online || busy} onClick={() => void setDeviceState("on")}><span aria-hidden="true">⏻</span> Turn ON</button>
                 <button className="button button-off" type="button" disabled={!online || busy} onClick={() => void setDeviceState("off")}><span aria-hidden="true">⏻</span> Turn OFF</button>

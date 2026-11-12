@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authenticate } from "../../../../lib/auth";
+import {
+  getDefaultOwnedDevice,
+  getUserByUsername,
+  listOwnedDevices,
+} from "../../../../lib/device-inventory";
 import { prisma } from "../../../../lib/prisma";
 
 export const runtime = "nodejs";
@@ -20,7 +25,8 @@ function dhakaCalendarDate(date: Date) {
 }
 
 export async function GET(request: NextRequest) {
-  if (!authenticate(request)) {
+  const username = authenticate(request);
+  if (!username) {
     return NextResponse.json({ error: "Please sign in." }, { status: 401 });
   }
 
@@ -28,12 +34,25 @@ export async function GET(request: NextRequest) {
   const currentMonthStart = Date.UTC(year, month - 1, 1);
   const previousMonthStart = Date.UTC(year, month - 2, 1);
   const nextMonthStart = Date.UTC(year, month, 1);
-  const deviceId = process.env.MQTT_DEVICE_ID?.trim() || "faysal-iot-001";
-
   try {
+    const user = await getUserByUsername(username);
+    if (!user) {
+      return NextResponse.json({ error: "Device inventory is not provisioned." }, { status: 503 });
+    }
+    const requestedDeviceId = request.nextUrl.searchParams.get("deviceId");
+    let devices;
+    if (requestedDeviceId === null) {
+      devices = await listOwnedDevices(user.id);
+    } else {
+      const device = await getDefaultOwnedDevice(user.id, requestedDeviceId);
+      if (!device) {
+        return NextResponse.json({ error: "Device or relay was not found." }, { status: 404 });
+      }
+      devices = [device];
+    }
     const rows = await prisma.deviceRuntimeDaily.findMany({
       where: {
-        deviceId,
+        deviceUuid: { in: devices.map((device) => device.id) },
         day: {
           gte: new Date(previousMonthStart),
           lt: new Date(nextMonthStart),

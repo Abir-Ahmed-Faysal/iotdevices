@@ -27,6 +27,22 @@ data class DeviceStatus(
     val transport: String = "cloud_mqtt",
 )
 
+data class HomeRelay(
+    val relayIndex: Int,
+    val name: String,
+    val gpio: Int,
+    val activeLow: Boolean,
+    val state: String,
+)
+
+data class HomeDevice(
+    val deviceId: String,
+    val name: String,
+    val online: Boolean,
+    val lastSeen: String?,
+    val relays: List<HomeRelay>,
+)
+
 data class ActivityEntry(
     val id: String,
     val eventType: String,
@@ -97,8 +113,29 @@ class IoTApi(private val context: Context) {
         }
     }
 
-    suspend fun deviceStatus(): DeviceStatus {
-        val json = execute("/api/device/status")
+    suspend fun devices(): List<HomeDevice> {
+        val array = execute("/api/devices").getJSONArray("devices")
+        return array.mapObjects { item ->
+            HomeDevice(
+                deviceId = item.getString("deviceId"),
+                name = item.getString("name"),
+                online = item.optBoolean("online"),
+                lastSeen = item.optStringOrNull("lastSeen"),
+                relays = item.getJSONArray("relays").mapObjects { relay ->
+                    HomeRelay(
+                        relayIndex = relay.getInt("relayIndex"),
+                        name = relay.getString("name"),
+                        gpio = relay.getInt("gpio"),
+                        activeLow = relay.optBoolean("activeLow"),
+                        state = relay.optString("state", "unknown"),
+                    )
+                },
+            )
+        }
+    }
+
+    suspend fun deviceStatus(deviceId: String? = null): DeviceStatus {
+        val json = execute(devicePath("/api/device/status", deviceId))
         return DeviceStatus(
             online = json.optBoolean("online"),
             state = json.optString("state", "unknown"),
@@ -110,9 +147,14 @@ class IoTApi(private val context: Context) {
         )
     }
 
-    suspend fun setDeviceState(action: String): String? {
+    suspend fun setDeviceState(
+        action: String,
+        deviceId: String? = null,
+        relayIndex: Int = 1,
+    ): String? {
         require(action == "on" || action == "off")
-        return execute("/api/device/$action", "POST", "")
+        require(relayIndex in 1..4)
+        return execute(devicePath("/api/device/$action", deviceId, relayIndex), "POST", "")
             .optStringOrNull("activityWarning")
     }
 
@@ -159,13 +201,13 @@ class IoTApi(private val context: Context) {
         }
     }
 
-    suspend fun smartDeviceStatus(): DeviceStatus {
+    suspend fun smartDeviceStatus(deviceId: String? = null): DeviceStatus {
         val mode = IoTSettings.getPreferredTransport(context)
         val localIp = IoTSettings.getLocalDeviceIp(context)
-        if (mode == "local") {
+        if (mode == "local" && deviceId == null) {
             return directLocalStatus(localIp)
         }
-        if (mode == "auto") {
+        if (mode == "auto" && deviceId == null) {
             try {
                 return directLocalStatus(localIp)
             } catch (_: Exception) {
@@ -176,17 +218,21 @@ class IoTApi(private val context: Context) {
                 }
             }
         }
-        return deviceStatus()
+        return deviceStatus(deviceId)
     }
 
-    suspend fun smartSetDeviceState(action: String): String? {
+    suspend fun smartSetDeviceState(
+        action: String,
+        deviceId: String? = null,
+        relayIndex: Int = 1,
+    ): String? {
         val mode = IoTSettings.getPreferredTransport(context)
         val localIp = IoTSettings.getLocalDeviceIp(context)
-        if (mode == "local") {
+        if (mode == "local" && deviceId == null && relayIndex == 1) {
             directLocalSetDeviceState(action, localIp)
             return null
         }
-        if (mode == "auto") {
+        if (mode == "auto" && deviceId == null && relayIndex == 1) {
             try {
                 directLocalSetDeviceState(action, localIp)
                 return null
@@ -199,7 +245,7 @@ class IoTApi(private val context: Context) {
                 }
             }
         }
-        return setDeviceState(action)
+        return setDeviceState(action, deviceId, relayIndex)
     }
 
     suspend fun activities(cursor: String? = null): ActivityPage {
@@ -239,6 +285,15 @@ class IoTApi(private val context: Context) {
                 },
             )
         }
+    }
+
+    private fun devicePath(path: String, deviceId: String?, relayIndex: Int? = null): String {
+        val parameters = mutableListOf<String>()
+        if (deviceId != null) {
+            parameters.add("deviceId=${java.net.URLEncoder.encode(deviceId, Charsets.UTF_8.name())}")
+        }
+        if (relayIndex != null) parameters.add("relayIndex=$relayIndex")
+        return if (parameters.isEmpty()) path else "$path?${parameters.joinToString("&")}"
     }
 
     private suspend fun execute(

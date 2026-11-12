@@ -27,7 +27,11 @@ function getControlMode() {
   return mode;
 }
 
-async function requestLocalDevice(path: string) {
+async function requestLocalDevice(path: string, deviceId?: string) {
+  const configuredDeviceId = process.env.MQTT_DEVICE_ID?.trim() || "faysal-iot-001";
+  if (deviceId && deviceId !== configuredDeviceId) {
+    throw new DeviceOperationError("Local control is configured for a different device.", 503);
+  }
   const espIp = process.env.ESP_IP?.trim();
   if (!espIp) throw new Error("ESP_IP is required when CONTROL_MODE=local.");
 
@@ -56,11 +60,11 @@ async function requestLocalDevice(path: string) {
   };
 }
 
-function getMqttConfig() {
+function getMqttConfig(requestedDeviceId?: string) {
   const host = process.env.MQTT_HOST?.trim();
   const username = process.env.MQTT_USERNAME?.trim();
   const password = process.env.MQTT_PASSWORD;
-  const deviceId = process.env.MQTT_DEVICE_ID?.trim() || "faysal-iot-001";
+  const deviceId = requestedDeviceId || process.env.MQTT_DEVICE_ID?.trim() || "faysal-iot-001";
   const port = Number(process.env.MQTT_PORT || 8883);
   const ca = process.env.MQTT_CA_PEM?.replace(/\\n/g, "\n").trim();
 
@@ -79,8 +83,8 @@ function getMqttConfig() {
   return { host, port, username, password, deviceId, ca };
 }
 
-function openClient() {
-  const config = getMqttConfig();
+function openClient(deviceId?: string) {
+  const config = getMqttConfig(deviceId);
   const client = mqtt.connect(`mqtts://${config.host}:${config.port}`, {
     username: config.username,
     password: config.password,
@@ -156,11 +160,11 @@ function offlineStatus(deviceId: string): DeviceStatus {
   };
 }
 
-export async function getDeviceStatus() {
+export async function getDeviceStatus(deviceId?: string) {
   if (getControlMode() === "local") {
-    return requestLocalDevice("/status");
+    return requestLocalDevice("/status", deviceId);
   }
-  const { client, config } = openClient();
+  const { client, config } = openClient(deviceId);
   try {
     await connect(client);
     return await new Promise<DeviceStatus>((resolve, reject) => {
@@ -191,14 +195,17 @@ export async function getDeviceStatus() {
   }
 }
 
-export async function setDeviceState(action: "on" | "off", relayIndex = 1) {
+export async function setDeviceState(action: "on" | "off", relayIndex = 1, deviceId?: string) {
   if (!Number.isSafeInteger(relayIndex) || relayIndex < 1 || relayIndex > 4) {
     throw new DeviceOperationError("Relay index must be between 1 and 4.", 400);
   }
   if (getControlMode() === "local") {
-    return requestLocalDevice(`/${action}`);
+    if (relayIndex !== 1) {
+      throw new DeviceOperationError("Local control supports only relay 1.", 503);
+    }
+    return requestLocalDevice(`/${action}`, deviceId);
   }
-  const { client, config } = openClient();
+  const { client, config } = openClient(deviceId);
   try {
     await connect(client);
     return await new Promise<DeviceStatus>((resolve, reject) => {

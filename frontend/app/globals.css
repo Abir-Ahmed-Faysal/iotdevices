@@ -31,7 +31,8 @@ a {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -41,7 +42,8 @@ button {
 
 button:focus-visible,
 a:focus-visible,
-input:focus-visible {
+input:focus-visible,
+select:focus-visible {
   outline: 2px solid #67b9ff;
   outline-offset: 3px;
 }
@@ -329,6 +331,31 @@ footer {
 .control-content {
   gap: 28px;
   min-height: 130px;
+}
+
+.inventory-selects {
+  display: grid;
+  flex: 1;
+  grid-template-columns: repeat(2, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.inventory-selects label {
+  display: grid;
+  align-content: center;
+  gap: 7px;
+  color: #a9bad6;
+  font-size: 0.82rem;
+}
+
+.inventory-selects select {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 10px;
+  border: 1px solid #90a9d442;
+  border-radius: 9px;
+  background: #071229;
+  color: #eef4ff;
 }
 
 .button-row {
@@ -774,6 +801,10 @@ footer {
     flex-direction: column;
     gap: 18px;
     padding: 18px 0 10px;
+  }
+
+  .inventory-selects {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .button-row {
