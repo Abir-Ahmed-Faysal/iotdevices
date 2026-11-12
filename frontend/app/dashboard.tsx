@@ -280,6 +280,21 @@ export default function Dashboard() {
       setUsername(user.username);
       setPassword("");
       setAuthenticated(true);
+      const redirect = new URLSearchParams(window.location.search).get("redirect");
+      if (redirect) {
+        try {
+          const target = new URL(redirect, window.location.origin);
+          if (
+            target.origin === window.location.origin &&
+            target.pathname === "/api/auth/oauth/authorize"
+          ) {
+            window.location.replace(`${target.pathname}${target.search}`);
+            return;
+          }
+        } catch {
+          setLoginMessage("The sign-in return address is invalid.");
+        }
+      }
       await refreshActivity(user.activityWarning);
     } catch (error) {
       setLoginMessage((error as Error).message);

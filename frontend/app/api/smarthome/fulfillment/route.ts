@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyOAuthToken } from "../../../../lib/auth";
+import {
+  isOAuthGrantActive,
+  revokeOAuthGrant,
+  verifyOAuthToken,
+} from "../../../../lib/auth";
 import { getDeviceStatus, setDeviceState } from "../../../../lib/mqtt-device";
 import { prisma } from "../../../../lib/prisma";
 
@@ -7,18 +11,29 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 10;
 
-function authenticateGoogleRequest(request: NextRequest) {
+async function authenticateGoogleRequest(request: NextRequest) {
   const authHeader = request.headers.get("authorization") || "";
   if (!authHeader.startsWith("Bearer ")) return null;
   const token = authHeader.slice(7).trim();
   const verified = verifyOAuthToken(token);
-  if (!verified) return null;
-  return verified.username;
+  if (!verified || verified.type !== "access" || !verified.grantId || !verified.clientId) {
+    return null;
+  }
+  if (!await isOAuthGrantActive(verified.grantId, verified.username, verified.clientId)) {
+    return null;
+  }
+  return verified;
 }
 
 export async function POST(request: NextRequest) {
-  const username = authenticateGoogleRequest(request);
-  if (!username) {
+  let token: Awaited<ReturnType<typeof authenticateGoogleRequest>>;
+  try {
+    token = await authenticateGoogleRequest(request);
+  } catch (error) {
+    console.error("Could not validate Google OAuth grant:", error);
+    return NextResponse.json({ error: "Google Home authorization is temporarily unavailable." }, { status: 503 });
+  }
+  if (!token) {
     return NextResponse.json({ error: "Unauthorized access." }, { status: 401 });
   }
 
@@ -36,7 +51,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       requestId,
       payload: {
-        agentUserId: username,
+        agentUserId: token.username,
         devices: [
           {
             id: deviceId,
@@ -81,7 +96,6 @@ export async function POST(request: NextRequest) {
           devices: {
             [deviceId]: {
               online: false,
-              on: false,
             },
           },
         },
@@ -140,7 +154,13 @@ export async function POST(request: NextRequest) {
   }
 
   if (intent === "action.devices.DISCONNECT") {
-    return NextResponse.json({});
+    try {
+      await revokeOAuthGrant(token.grantId, token.username, token.clientId);
+      return NextResponse.json({});
+    } catch (error) {
+      console.error("Could not revoke Google OAuth grant:", error);
+      return NextResponse.json({ error: "Google Home disconnect is temporarily unavailable." }, { status: 503 });
+    }
   }
 
   return NextResponse.json({ error: "Unsupported Smart Home intent." }, { status: 400 });

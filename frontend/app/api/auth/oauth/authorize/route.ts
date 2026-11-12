@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { authenticate, constantTimeStringEqual, createOAuthCode, getAdminUsername, getOAuthClientId } from "../../../../../lib/auth";
+import {
+  authenticate,
+  constantTimeStringEqual,
+  createOAuthCode,
+  getOAuthClientId,
+  isOAuthRedirectUriAllowed,
+} from "../../../../../lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,11 +20,27 @@ export async function GET(request: NextRequest) {
   if (responseType !== "code") {
     return NextResponse.json({ error: "Unsupported response_type. Must be 'code'." }, { status: 400 });
   }
-  if (!redirectUri) {
-    return NextResponse.json({ error: "Missing redirect_uri parameter." }, { status: 400 });
+  if (!redirectUri || redirectUri.length > 2048) {
+    return NextResponse.json({ error: "Invalid or unregistered redirect_uri." }, { status: 400 });
   }
-  if (!clientId || !constantTimeStringEqual(clientId, getOAuthClientId())) {
+
+  let redirectAllowed: boolean;
+  let configuredClientId: string;
+  try {
+    redirectAllowed = isOAuthRedirectUriAllowed(redirectUri);
+    configuredClientId = getOAuthClientId();
+  } catch (error) {
+    console.error("OAuth authorization configuration is unavailable:", error);
+    return NextResponse.json({ error: "OAuth authorization is temporarily unavailable." }, { status: 503 });
+  }
+  if (!redirectAllowed) {
+    return NextResponse.json({ error: "Invalid or unregistered redirect_uri." }, { status: 400 });
+  }
+  if (!clientId || !constantTimeStringEqual(clientId, configuredClientId)) {
     return NextResponse.json({ error: "Unknown OAuth client." }, { status: 401 });
+  }
+  if (state.length > 512) {
+    return NextResponse.json({ error: "OAuth state is too long." }, { status: 400 });
   }
 
   const authenticatedUser = authenticate(request);
@@ -28,7 +50,14 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  const code = createOAuthCode(getAdminUsername(), clientId, redirectUri);
+  let code: string;
+  try {
+    code = await createOAuthCode(authenticatedUser, clientId, redirectUri);
+  } catch (error) {
+    console.error("Could not create OAuth authorization code:", error);
+    return NextResponse.json({ error: "OAuth authorization is temporarily unavailable." }, { status: 503 });
+  }
+
   const targetUrl = new URL(redirectUri);
   targetUrl.searchParams.set("code", code);
   if (state) {
