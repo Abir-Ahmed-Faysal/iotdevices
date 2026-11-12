@@ -6,9 +6,9 @@
 #include <espMqttClient.h>
 #include <time.h>
 
+#include "secrets.h"
 #include "config.h"
 #include "mqtt_ca.h"
-#include "secrets.h"
 
 enum NetworkMode {
   NET_NONE,
@@ -40,6 +40,7 @@ bool timeSyncStarted = false;
 bool clockSynchronized = false;
 bool relayIsOn = false;
 bool apModeActive = false;
+bool emergencyApAttempted = false;
 
 char mqttCommandTopic[112];
 char mqttStateTopic[112];
@@ -172,13 +173,29 @@ void sendStatus() {
   server.send(200, "application/json", makeStatusJson());
 }
 
+bool authorizeLocalControl() {
+  if (!LOCAL_CONTROL_ENABLED) {
+    return false;
+  }
+  const String expected = String("Bearer ") + LOCAL_CONTROL_TOKEN;
+  return server.header("Authorization") == expected;
+}
+
 void setupRoutes() {
   server.on("/on", HTTP_GET, []() {
+    if (!authorizeLocalControl()) {
+      server.send(403, "application/json", "{\"error\":\"Local control is disabled or unauthorized.\"}");
+      return;
+    }
     setRelay(true);
     sendStatus();
   });
 
   server.on("/off", HTTP_GET, []() {
+    if (!authorizeLocalControl()) {
+      server.send(403, "application/json", "{\"error\":\"Local control is disabled or unauthorized.\"}");
+      return;
+    }
     setRelay(false);
     sendStatus();
   });
@@ -189,7 +206,29 @@ void setupRoutes() {
     server.send(404, "application/json", "{\"error\":\"Not found\"}");
   });
 
+  const char* headers[] = {"Authorization"};
+  server.collectHeaders(headers, 1);
   server.begin();
+}
+
+void enableEmergencyAccessPoint() {
+  emergencyApAttempted = true;
+  const size_t passwordLength = strlen(AP_SETUP_PASSWORD);
+  if (passwordLength < 12 || passwordLength > 63) {
+    Serial.println("Emergency SoftAP disabled: provision a unique AP_SETUP_PASSWORD.");
+    return;
+  }
+  if (!WiFi.softAP(AP_SSID, AP_SETUP_PASSWORD)) {
+    Serial.println("Could not start emergency SoftAP.");
+    return;
+  }
+  apModeActive = true;
+  currentNetworkMode = NET_WIFI_AP;
+  emergencyApAttempted = false;
+  Serial.print("Emergency SoftAP enabled: ");
+  Serial.println(AP_SSID);
+  Serial.print("SoftAP IP: ");
+  Serial.println(WiFi.softAPIP());
 }
 
 void onNetworkEvent(WiFiEvent_t event) {
@@ -240,8 +279,8 @@ void setup() {
   snprintf(mqttStateTopic, sizeof(mqttStateTopic), "%s/%s/state",
            MQTT_TOPIC_ROOT, MQTT_DEVICE_ID);
 
-  pinMode(RELAY_PIN, OUTPUT);
   setRelay(false);
+  pinMode(RELAY_PIN, OUTPUT);
 
   if (mqttIsConfigured()) {
     static const char offlinePayload[] =
@@ -288,6 +327,7 @@ void loop() {
   // Determine active network mode (Priority: Ethernet -> Wi-Fi STA -> Emergency SoftAP)
   if (ethConnected) {
     currentNetworkMode = NET_ETHERNET;
+    emergencyApAttempted = false;
     if (apModeActive) {
       WiFi.softAPdisconnect(true);
       apModeActive = false;
@@ -295,6 +335,7 @@ void loop() {
     }
   } else if (WiFi.isConnected()) {
     currentNetworkMode = NET_WIFI_STA;
+    emergencyApAttempted = false;
     if (apModeActive) {
       WiFi.softAPdisconnect(true);
       apModeActive = false;
@@ -302,14 +343,9 @@ void loop() {
     }
   } else {
     // Check if emergency fallback SoftAP should be enabled
-    if (!apModeActive && (now - networkStartTime >= AP_FALLBACK_TIMEOUT_MS)) {
-      WiFi.softAP(AP_SSID, AP_PASSWORD);
-      apModeActive = true;
-      currentNetworkMode = NET_WIFI_AP;
-      Serial.print("Emergency SoftAP enabled: ");
-      Serial.println(AP_SSID);
-      Serial.print("SoftAP IP: ");
-      Serial.println(WiFi.softAPIP());
+    if (!apModeActive && !emergencyApAttempted &&
+        (now - networkStartTime >= AP_FALLBACK_TIMEOUT_MS)) {
+      enableEmergencyAccessPoint();
     }
   }
 

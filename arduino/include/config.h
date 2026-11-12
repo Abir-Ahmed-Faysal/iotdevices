@@ -16,6 +16,19 @@ constexpr int ETH_MDIO = 18;
 constexpr int ETH_POWER = 16;
 constexpr eth_clock_mode_t ETH_CLOCK_MODE = ETH_CLOCK_GPIO0_IN;
 
-// Emergency SoftAP Fallback Configuration
+#ifndef AP_SETUP_PASSWORD
+#define AP_SETUP_PASSWORD ""
+#endif
+
+#ifndef ENABLE_LOCAL_HTTP_CONTROL
+#define ENABLE_LOCAL_HTTP_CONTROL 0
+#endif
+
+#ifndef LOCAL_CONTROL_TOKEN
+#define LOCAL_CONTROL_TOKEN ""
+#endif
+
+constexpr bool LOCAL_CONTROL_ENABLED =
+    ENABLE_LOCAL_HTTP_CONTROL != 0 && sizeof(LOCAL_CONTROL_TOKEN) > 32;
+
 constexpr char AP_SSID[] = "FishVoice-IoT-Setup";
-constexpr char AP_PASSWORD[] = "faysaliotsetup";
