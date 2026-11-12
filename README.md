@@ -36,7 +36,7 @@ The firmware ([main.cpp](file:///C:/WorkSpace/ardino/arduino/src/main.cpp)) impl
 
 1. **Primary Interface**: Ethernet LAN8720 RMII PHY (`ETH_PHY_ADDR = 1`, `ETH_PHY_POWER = 16`, `ETH_PHY_MDC = 23`, `ETH_PHY_MDIO = 18`, `ETH_CLK_MODE = ETH_CLOCK_GPIO0_IN`).
 2. **Secondary Backup**: 2.4 GHz Wi-Fi STA mode (`WIFI_SSID` / `WIFI_PASSWORD`).
-3. **Emergency SoftAP Fallback**: Emergency Wi-Fi Access Point (`FishVoice-IoT-Setup` / `faysaliotsetup`, IP `192.168.4.1`) automatically enabled if both Ethernet and Wi-Fi STA fail for > 15s.
+3. **Emergency SoftAP Fallback**: The setup access point is available only after a unique per-device passphrase is provisioned; it remains disabled when no valid passphrase is configured.
 4. **Safety & Auto-Recovery**: Network transitions maintain current relay state (no relay toggling during failover). When Primary Ethernet or Secondary Wi-Fi STA link recovers, the firmware automatically disables SoftAP and returns to the primary network.
 
 ### Flashing Firmware
@@ -92,9 +92,9 @@ $env:ANDROID_HOME="C:\Users\dream\AppData\Local\Android\Sdk"
 
 ## Local HTTP Endpoints
 
-When connected to local LAN or emergency SoftAP (`192.168.4.1`), direct HTTP endpoints are available:
+When connected to the local LAN or configured emergency SoftAP (`192.168.4.1`), the read-only status endpoint is available:
 ```powershell
 curl.exe http://<ESP_IP>/status
-curl.exe http://<ESP_IP>/on
-curl.exe http://<ESP_IP>/off
 ```
+
+Local relay-control endpoints are disabled by default. If explicitly enabled for a provisioned deployment, they require a device-specific bearer token; use the authenticated backend for normal control.
