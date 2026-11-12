@@ -65,3 +65,13 @@ model OAuthGrant {
   @@index([expiresAt])
   @@map("oauth_grants")
 }
+
+model ApiRateLimit {
+  bucketKey    String   @id @map("bucket_key") @db.Char(64)
+  windowStart  DateTime @map("window_start") @db.Timestamptz(6)
+  requestCount Int      @map("request_count")
+  expiresAt    DateTime @map("expires_at") @db.Timestamptz(6)
+
+  @@index([expiresAt])
+  @@map("api_rate_limits")
+}

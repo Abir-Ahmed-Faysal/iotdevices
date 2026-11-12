@@ -4,6 +4,7 @@ import {
   exchangeOAuthCode,
   rotateOAuthRefreshToken,
 } from "../../../../../lib/auth";
+import { takeRateLimit } from "../../../../../lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,6 +35,30 @@ function getClientCredentials(request: NextRequest, body: Record<string, string>
 }
 
 export async function POST(request: NextRequest) {
+  let rateLimit: Awaited<ReturnType<typeof takeRateLimit>>;
+  try {
+    rateLimit = await takeRateLimit(request, "oauth-token", 30, 5 * 60 * 1000);
+  } catch (error) {
+    console.error(
+      "OAuth token rate limiting is unavailable:",
+      error instanceof Error ? error.name : "UnknownError",
+    );
+    return NextResponse.json({ error: "OAuth token service is temporarily unavailable." }, { status: 503 });
+  }
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: "Too many token requests. Try again later." },
+      {
+        status: 429,
+        headers: {
+          "Cache-Control": "no-store",
+          Pragma: "no-cache",
+          "Retry-After": String(rateLimit.retryAfterSeconds),
+        },
+      },
+    );
+  }
+
   const contentLength = Number(request.headers.get("content-length") || 0);
   if (contentLength > 8192) {
     return NextResponse.json({ error: "OAuth request body is too large." }, { status: 413 });

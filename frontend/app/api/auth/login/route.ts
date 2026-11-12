@@ -7,6 +7,7 @@ import {
   setSessionCookie,
 } from "../../../../lib/auth";
 import { prisma } from "../../../../lib/prisma";
+import { takeRateLimit } from "../../../../lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,6 +27,22 @@ function getPasswordHash() {
 export async function POST(request: NextRequest) {
   if (!isSameOrigin(request)) {
     return NextResponse.json({ error: "Request origin is not allowed." }, { status: 403 });
+  }
+  let rateLimit: Awaited<ReturnType<typeof takeRateLimit>>;
+  try {
+    rateLimit = await takeRateLimit(request, "login", 10, 15 * 60 * 1000);
+  } catch (error) {
+    console.error(
+      "Login rate limiting is unavailable:",
+      error instanceof Error ? error.name : "UnknownError",
+    );
+    return NextResponse.json({ error: "Sign-in is temporarily unavailable." }, { status: 503 });
+  }
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: "Too many sign-in attempts. Try again later." },
+      { status: 429, headers: { "Retry-After": String(rateLimit.retryAfterSeconds) } },
+    );
   }
   const contentLength = Number(request.headers.get("content-length") || 0);
   if (contentLength > 4096) {
