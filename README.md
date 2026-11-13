@@ -13,6 +13,10 @@ FishVoice IoT (also named Faysal IoT) is a production-grade, multi-tier smart re
                                                          |
                                                          v
                                               [EMQX Cloud MQTT Broker]
+                                                         |
+                                          (authenticated state webhook)
+                                                         v
+ [Google Home] <--- (HomeGraph Report State / Request Sync) --- [Vercel Next.js Backend]
                                                          ^
                                                          |
                                                   (MQTTS / TLS 8883)
@@ -61,8 +65,10 @@ Deployed on Vercel at `https://iotpro.vercel.app/`.
 - `POST /api/auth/login` — Sign in and set stateless HMAC-SHA256 12-hour session cookie (`faysal_session`).
 - `GET /api/auth/me` — Verify active session cookie.
 - `POST /api/auth/logout` — Clear session cookie.
-- `POST /api/device/on`, `POST /api/device/off` — Publish MQTTS command `{requestId, action}` to `faysal-iot/v1/devices/<deviceId>/command` and wait up to 4.5s for matching `requestId` ACK on `/state` topic.
+- `POST /api/device/on`, `POST /api/device/off` — Publish MQTTS command `{requestId, action, relayIndex}` to `faysal-iot/v1/devices/<deviceId>/command` and wait up to 4.5s for matching `requestId` ACK on `/state` topic. Missing `relayIndex` means relay 1.
 - `GET /api/device/status` — Get reported device state, IP, uptime, and online status.
+- `POST /api/webhooks/emqx/state` — Authenticated EMQX Data Integration webhook for retained device state and LWT; updates PostgreSQL and reports state to linked Google Home accounts.
+- `POST /api/smarthome/request-sync` — Authenticated same-origin request to refresh Google Home inventory.
 - `GET /api/device/runtime` — Fetch daily cumulative online & relay-ON runtime (Dhaka calendar).
 - `GET /api/activity` — Retrieve cursor-paginated activity event log.
 
@@ -98,3 +104,14 @@ curl.exe http://<ESP_IP>/status
 ```
 
 Local relay-control endpoints are disabled by default. If explicitly enabled for a provisioned deployment, they require a device-specific bearer token; use the authenticated backend for normal control.
+
+## MQTT relay state and provisioning
+
+The existing topics remain unchanged:
+
+- Command: `faysal-iot/v1/devices/<deviceId>/command` with JSON `{ "requestId": "...", "action": "on|off", "relayIndex": 1 }` (QoS 1).
+- State: `faysal-iot/v1/devices/<deviceId>/state` with a retained JSON snapshot. The root `state` remains relay 1 for older clients; `relays` reports each configured relay. Missing command `relayIndex` defaults to 1.
+- Device state webhook: configure EMQX Data Integration to POST `{ "topic": "<topic>", "payload": "<JSON payload>" }` to `/api/webhooks/emqx/state`, with the `x-emqx-webhook-secret` header set to the same random secret as `EMQX_WEBHOOK_SECRET` (at least 32 characters). Restrict the integration to the device `/state` topics and use the broker ACL to limit device credentials to their own command and state topics.
+- HomeGraph: set `GOOGLE_HOME_SERVICE_ACCOUNT_JSON` to the Google service-account JSON in the deployment environment. Enable the HomeGraph API and grant the service account permission to call it. Do not commit the service-account JSON or place it in client-side configuration.
+
+For WT32-ETH01 relay outputs, the firmware configuration supports IO4, IO14, IO32, and IO33 only. RMII Ethernet uses IO0, IO16, IO18, IO19, IO21, IO22, IO23, IO25, IO26, and IO27. Configure each relay's pin and `activeLow` value in `arduino/include/config.h`; relay outputs are initialized OFF before setting the pins to OUTPUT. Verify the relay module's electrical compatibility and boot behavior on the actual hardware before connecting any load.

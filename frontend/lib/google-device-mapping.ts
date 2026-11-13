@@ -26,7 +26,7 @@ export function buildGoogleSyncDevices(devices: GoogleInventoryDevice[]) {
       name: relay.name,
       nicknames: [relay.name],
     },
-    willReportState: false,
+    willReportState: true,
     deviceInfo: {
       manufacturer: "Faysal IoT",
       model: "WT32-ETH01 Smart Relay Controller",

@@ -8,6 +8,7 @@ type DeviceObservation = {
   online: boolean;
   uptime?: number | null;
   state?: "on" | "off" | "unknown";
+  relays?: Array<{ relayIndex: number; state: "on" | "off" }>;
 };
 
 const MAX_TRACKED_GAP_MS = 30_000;
@@ -144,13 +145,18 @@ export async function recordDeviceObservation(observation: DeviceObservation) {
         lastSeen: observation.online ? observedAt : undefined,
       },
     });
-    if (observation.state === "on" || observation.state === "off") {
+    const relayStates = observation.relays ?? (
+      observation.state === "on" || observation.state === "off"
+        ? [{ relayIndex: 1, state: observation.state }]
+        : []
+    );
+    for (const relay of relayStates) {
       await transaction.relay.updateMany({
         where: {
           deviceId: observation.deviceUuid,
-          relayIndex: 1,
+          relayIndex: relay.relayIndex,
         },
-        data: { state: observation.state },
+        data: { state: relay.state },
       });
     }
   });
