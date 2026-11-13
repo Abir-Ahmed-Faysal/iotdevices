@@ -105,6 +105,9 @@ async function seed() {
       where: { username, userId: null },
       data: { userId: user.id },
     });
+  }, {
+    maxWait: 10_000,
+    timeout: 30_000,
   });
 
   console.log("Existing admin, home, device, relay, and legacy ownership references are seeded.");
@@ -112,8 +115,12 @@ async function seed() {
 
 try {
   await seed();
-} catch {
-  console.error("Seed failed. Check the process environment and applied database migrations.");
+} catch (error) {
+  const code = error && typeof error === "object" && "code" in error &&
+    typeof error.code === "string"
+    ? error.code
+    : error instanceof Error ? error.name : "UnknownError";
+  console.error(`Seed failed (${code}). Check the process environment and applied database migrations.`);
   process.exitCode = 1;
 } finally {
   await prisma.$disconnect();
