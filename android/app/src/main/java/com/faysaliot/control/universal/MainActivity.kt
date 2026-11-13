@@ -145,8 +145,6 @@ private fun FaysalApp(api: IoTApi, autoStartVoice: Boolean = false, onVoiceConsu
     var backgroundServiceEnabled by remember { mutableStateOf(IoTSettings.isBackgroundServiceEnabled(context)) }
     var wakeWordEnabled by remember { mutableStateOf(IoTSettings.isWakeWordEnabled(context)) }
     var voiceLanguage by remember { mutableStateOf(IoTSettings.getVoiceLanguage(context)) }
-    var preferredTransport by remember { mutableStateOf(IoTSettings.getPreferredTransport(context)) }
-    var localDeviceIp by remember { mutableStateOf(IoTSettings.getLocalDeviceIp(context)) }
     var voiceMessage by remember { mutableStateOf("") }
 
     var pendingVoiceAction by remember { mutableStateOf<String?>(null) }
@@ -280,8 +278,6 @@ private fun FaysalApp(api: IoTApi, autoStartVoice: Boolean = false, onVoiceConsu
             runtimeError = runtimeError,
             backgroundServiceEnabled = backgroundServiceEnabled,
             wakeWordEnabled = wakeWordEnabled,
-            preferredTransport = preferredTransport,
-            localDeviceIp = localDeviceIp,
             onToggleBackgroundService = { enabled ->
                 backgroundServiceEnabled = enabled
                 IoTSettings.setBackgroundServiceEnabled(context, enabled)
@@ -294,15 +290,6 @@ private fun FaysalApp(api: IoTApi, autoStartVoice: Boolean = false, onVoiceConsu
             onToggleWakeWord = { enabled ->
                 wakeWordEnabled = enabled
                 IoTSettings.setWakeWordEnabled(context, enabled)
-            },
-            onTransportChange = { mode ->
-                preferredTransport = mode
-                IoTSettings.setPreferredTransport(context, mode)
-                scope.launch { refreshStatus() }
-            },
-            onLocalIpChange = { ip ->
-                localDeviceIp = ip
-                IoTSettings.setLocalDeviceIp(context, ip)
             },
             voiceMessage = voiceMessage,
             voiceLanguage = voiceLanguage,
@@ -539,12 +526,8 @@ private fun DashboardScreen(
     runtimeError: String,
     backgroundServiceEnabled: Boolean,
     wakeWordEnabled: Boolean,
-    preferredTransport: String,
-    localDeviceIp: String,
     onToggleBackgroundService: (Boolean) -> Unit,
     onToggleWakeWord: (Boolean) -> Unit,
-    onTransportChange: (String) -> Unit,
-    onLocalIpChange: (String) -> Unit,
     voiceMessage: String,
     voiceLanguage: String,
     onVoiceLanguageChange: (String) -> Unit,
@@ -687,25 +670,15 @@ private fun DashboardScreen(
 
             Panel(title = "App & Background Settings") {
                 Text(
-                    "Network transport, background service & FishVoice Voice Assistant",
+                    "Server-synced device control, background service & FishVoice Voice Assistant",
                     color = Muted,
                     fontSize = 13.sp,
                 )
                 Spacer(Modifier.height(10.dp))
-                Text("Transport Mode", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                Spacer(Modifier.height(4.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    TransportButton("Auto Smart", preferredTransport == "auto") { onTransportChange("auto") }
-                    TransportButton("Cloud MQTTS", preferredTransport == "cloud") { onTransportChange("cloud") }
-                    TransportButton("Local Direct", preferredTransport == "local") { onTransportChange("local") }
-                }
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = localDeviceIp,
-                    onValueChange = onLocalIpChange,
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Local Device IP / SoftAP") },
-                    singleLine = true,
+                Text(
+                    "Device status and commands use your signed-in account and the shared backend to keep app state synchronized.",
+                    color = Muted,
+                    fontSize = 12.sp,
                 )
                 Spacer(Modifier.height(12.dp))
                 Row(
@@ -1091,12 +1064,3 @@ private fun formatDate(value: String): String = runCatching {
     val date = javax.xml.datatype.DatatypeFactory.newInstance().newXMLGregorianCalendar(value).toGregorianCalendar().time
     DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(date)
 }.getOrDefault(value)
-
-@Composable
-private fun TransportButton(label: String, selected: Boolean, onClick: () -> Unit) {
-    if (selected) {
-        Button(onClick = onClick) { Text(label, fontSize = 12.sp) }
-    } else {
-        OutlinedButton(onClick = onClick) { Text(label, fontSize = 12.sp) }
-    }
-}

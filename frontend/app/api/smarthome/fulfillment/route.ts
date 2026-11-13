@@ -5,10 +5,10 @@ import {
   verifyOAuthToken,
 } from "../../../../lib/auth";
 import {
+  buildGoogleQueryStates,
   buildGoogleSyncDevices,
   listOwnedDevices,
   resolveGoogleExecutionTargets,
-  resolveGoogleTarget,
 } from "../../../../lib/device-inventory";
 import { setDeviceState } from "../../../../lib/mqtt-device";
 import { prisma } from "../../../../lib/prisma";
@@ -148,25 +148,12 @@ export async function POST(request: NextRequest) {
     }
     try {
       const devices = await listOwnedDevices(token.userId);
-      const states: Record<string, Record<string, boolean | string>> = {};
-      for (const requested of requestedDevices) {
-        const targetId = isRecord(requested) && typeof requested.id === "string"
-          ? requested.id
-          : "";
-        const target = targetId ? resolveGoogleTarget(devices, targetId) : null;
-        if (!target) {
-          states[targetId || "unknown"] = { online: false, errorCode: "deviceNotFound" };
-          continue;
-        }
-        const stateKnown = target.relay.state === "on" || target.relay.state === "off";
-        states[targetId] = {
-          online: target.device.online && stateKnown,
-          ...(stateKnown ? { on: target.relay.state === "on" } : {}),
-        };
-      }
+      const targetIds = requestedDevices.map((requested) =>
+        isRecord(requested) && typeof requested.id === "string" ? requested.id : "",
+      );
       return NextResponse.json({
         requestId,
-        payload: { devices: states },
+        payload: { devices: buildGoogleQueryStates(devices, targetIds) },
       });
     } catch (error) {
       console.error("Could not query Google Home device state:", error);

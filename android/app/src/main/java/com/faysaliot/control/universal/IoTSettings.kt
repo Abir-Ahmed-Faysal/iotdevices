@@ -8,8 +8,6 @@ object IoTSettings {
     private const val KEY_BACKGROUND_SERVICE = "background_service_enabled"
     private const val KEY_WAKE_WORD = "wake_word_enabled"
     private const val KEY_VOICE_LANGUAGE = "voice_language"
-    private const val KEY_PREFERRED_TRANSPORT = "preferred_transport"
-    private const val KEY_LOCAL_DEVICE_IP = "local_device_ip"
 
     private fun prefs(context: Context): SharedPreferences =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -35,17 +33,4 @@ object IoTSettings {
         prefs(context).edit().putString(KEY_VOICE_LANGUAGE, lang).apply()
     }
 
-    fun getPreferredTransport(context: Context): String =
-        prefs(context).getString(KEY_PREFERRED_TRANSPORT, "auto") ?: "auto"
-
-    fun setPreferredTransport(context: Context, transport: String) {
-        prefs(context).edit().putString(KEY_PREFERRED_TRANSPORT, transport).apply()
-    }
-
-    fun getLocalDeviceIp(context: Context): String =
-        prefs(context).getString(KEY_LOCAL_DEVICE_IP, "192.168.4.1") ?: "192.168.4.1"
-
-    fun setLocalDeviceIp(context: Context, ip: String) {
-        prefs(context).edit().putString(KEY_LOCAL_DEVICE_IP, ip.trim()).apply()
-    }
 }

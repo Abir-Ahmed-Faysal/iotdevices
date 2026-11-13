@@ -11,7 +11,7 @@ export type GoogleInventoryDevice = {
 };
 
 export function googleRelayDeviceId(device: GoogleInventoryDevice, relayIndex: number) {
-  return device.relays.length === 1
+  return relayIndex === 1
     ? device.deviceId
     : `${device.deviceId}:relay${relayIndex}`;
 }
@@ -75,4 +75,26 @@ export function resolveGoogleExecutionTargets<
     targets.push(target);
   }
   return { targets };
+}
+
+export function buildGoogleQueryStates<
+  TRelay extends GoogleInventoryRelay,
+  TDevice extends { deviceId: string; name: string; online: boolean; relays: TRelay[] },
+>(devices: TDevice[], targetIds: string[]) {
+  const states: Record<string, { online: boolean; on?: boolean; errorCode?: string }> = {};
+  for (const targetId of targetIds) {
+    const target = targetId ? resolveGoogleTarget<TRelay, TDevice>(devices, targetId) : null;
+    if (!target) {
+      states[targetId || "unknown"] = { online: false, errorCode: "deviceNotFound" };
+      continue;
+    }
+
+    states[targetId] = {
+      online: target.device.online,
+      ...(target.relay.state === "on" || target.relay.state === "off"
+        ? { on: target.relay.state === "on" }
+        : {}),
+    };
+  }
+  return states;
 }

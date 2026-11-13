@@ -1,16 +1,16 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "./prisma";
 import {
+  buildGoogleQueryStates,
   buildGoogleSyncDevices,
   resolveGoogleExecutionTargets,
-  resolveGoogleTarget,
 } from "./google-device-mapping";
 import { ownedDeviceFilter } from "./device-ownership";
 
 export {
+  buildGoogleQueryStates,
   buildGoogleSyncDevices,
   resolveGoogleExecutionTargets,
-  resolveGoogleTarget,
   ownedDeviceFilter,
 };
 

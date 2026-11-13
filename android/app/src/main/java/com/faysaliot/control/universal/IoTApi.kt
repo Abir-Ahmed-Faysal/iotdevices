@@ -88,12 +88,6 @@ class IoTApi(private val context: Context) {
         }
         .build()
 
-    private val localClient = OkHttpClient.Builder()
-        .connectTimeout(2, TimeUnit.SECONDS)
-        .readTimeout(3, TimeUnit.SECONDS)
-        .callTimeout(4, TimeUnit.SECONDS)
-        .build()
-
     suspend fun signIn(username: String, password: String): Pair<String, String?> {
         val body = JSONObject()
             .put("username", username)
@@ -158,66 +152,7 @@ class IoTApi(private val context: Context) {
             .optStringOrNull("activityWarning")
     }
 
-    suspend fun directLocalStatus(targetIp: String = "192.168.4.1"): DeviceStatus {
-        val url = "http://$targetIp/status"
-        val request = Request.Builder().url(url).get().build()
-        val response = await(localClient.newCall(request))
-        response.use {
-            if (!it.isSuccessful) throw ApiException(it.code, "Local device returned HTTP ${it.code}.")
-            val json = JSONObject(it.body.string())
-            val activeIp = json.optString("ip", targetIp)
-            val transport = if (activeIp == "192.168.4.1" || targetIp == "192.168.4.1") "soft_ap" else "local_lan"
-            return DeviceStatus(
-                online = true,
-                state = json.optString("state", "unknown"),
-                ip = activeIp,
-                uptime = json.optLongOrNull("uptime"),
-                lastSeen = "Just now (Direct)",
-                activityWarning = null,
-                transport = transport,
-            )
-        }
-    }
-
-    suspend fun directLocalSetDeviceState(action: String, targetIp: String = "192.168.4.1"): DeviceStatus {
-        require(action == "on" || action == "off")
-        val url = "http://$targetIp/$action"
-        val request = Request.Builder().url(url).get().build()
-        val response = await(localClient.newCall(request))
-        response.use {
-            if (!it.isSuccessful) throw ApiException(it.code, "Local command failed (${it.code}).")
-            val json = JSONObject(it.body.string())
-            val activeIp = json.optString("ip", targetIp)
-            val transport = if (activeIp == "192.168.4.1" || targetIp == "192.168.4.1") "soft_ap" else "local_lan"
-            return DeviceStatus(
-                online = true,
-                state = json.optString("state", "unknown"),
-                ip = activeIp,
-                uptime = json.optLongOrNull("uptime"),
-                lastSeen = "Just now (Direct)",
-                activityWarning = null,
-                transport = transport,
-            )
-        }
-    }
-
     suspend fun smartDeviceStatus(deviceId: String? = null): DeviceStatus {
-        val mode = IoTSettings.getPreferredTransport(context)
-        val localIp = IoTSettings.getLocalDeviceIp(context)
-        if (mode == "local" && deviceId == null) {
-            return directLocalStatus(localIp)
-        }
-        if (mode == "auto" && deviceId == null) {
-            try {
-                return directLocalStatus(localIp)
-            } catch (_: Exception) {
-                if (localIp != "192.168.4.1") {
-                    try {
-                        return directLocalStatus("192.168.4.1")
-                    } catch (_: Exception) {}
-                }
-            }
-        }
         return deviceStatus(deviceId)
     }
 
@@ -226,25 +161,6 @@ class IoTApi(private val context: Context) {
         deviceId: String? = null,
         relayIndex: Int = 1,
     ): String? {
-        val mode = IoTSettings.getPreferredTransport(context)
-        val localIp = IoTSettings.getLocalDeviceIp(context)
-        if (mode == "local" && deviceId == null && relayIndex == 1) {
-            directLocalSetDeviceState(action, localIp)
-            return null
-        }
-        if (mode == "auto" && deviceId == null && relayIndex == 1) {
-            try {
-                directLocalSetDeviceState(action, localIp)
-                return null
-            } catch (_: Exception) {
-                if (localIp != "192.168.4.1") {
-                    try {
-                        directLocalSetDeviceState(action, "192.168.4.1")
-                        return null
-                    } catch (_: Exception) {}
-                }
-            }
-        }
         return setDeviceState(action, deviceId, relayIndex)
     }
 

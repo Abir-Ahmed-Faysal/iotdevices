@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  buildGoogleQueryStates,
   buildGoogleSyncDevices,
   resolveGoogleExecutionTargets,
   resolveGoogleTarget,
@@ -31,17 +32,30 @@ test("SYNC maps one relay to the legacy device ID", () => {
 });
 
 test("SYNC maps three relays to stable relay-specific IDs", () => {
+  const legacySyncId = buildGoogleSyncDevices([controller("multi-device", 1)])[0].id;
   const inventory = [controller("multi-device", 3)];
   const devices = buildGoogleSyncDevices(inventory);
   assert.deepEqual(devices.map((device) => device.id), [
-    "multi-device:relay1",
+    "multi-device",
     "multi-device:relay2",
     "multi-device:relay3",
   ]);
+  assert.equal(devices[0].id, legacySyncId);
   assert.deepEqual(
     devices.map((device) => resolveGoogleTarget(inventory, device.id)?.relay.relayIndex),
     [1, 2, 3],
   );
+});
+
+test("QUERY reports online independently from unknown relay state", () => {
+  const device = {
+    ...controller("online-device", 1),
+    online: true,
+    relays: [{ relayIndex: 1, name: "Relay 1", state: "unknown" }],
+  };
+  assert.deepEqual(buildGoogleQueryStates([device], ["online-device"]), {
+    "online-device": { online: true },
+  });
 });
 
 test("EXECUTE rejects foreign and unknown device IDs identically", () => {
