@@ -10,7 +10,8 @@ import {
   listOwnedDevices,
   resolveGoogleExecutionTargets,
 } from "../../../../lib/device-inventory";
-import { setDeviceState } from "../../../../lib/mqtt-device";
+import { executeDeviceCommand } from "../../../../lib/device-command";
+import { DeviceOperationError } from "../../../../lib/mqtt-device";
 import { prisma } from "../../../../lib/prisma";
 
 export const runtime = "nodejs";
@@ -219,52 +220,25 @@ export async function POST(request: NextRequest) {
 
         const action = params.on ? "on" : "off";
         let failed = false;
+        let errorCode = "deviceOffline";
         try {
           for (const target of targetResolution.targets) {
-            const status = await setDeviceState(
+            const status = await executeDeviceCommand({
+              device: target.device,
+              userId: token.userId,
+              relayIndex: target.relay.relayIndex,
               action,
-              target.relay.relayIndex,
-              target.device.deviceId,
-            );
-            try {
-              await prisma.$transaction([
-                prisma.relay.update({
-                  where: {
-                    deviceId_relayIndex: {
-                      deviceId: target.device.id,
-                      relayIndex: target.relay.relayIndex,
-                    },
-                  },
-                  data: { state: action },
-                }),
-                prisma.device.update({
-                  where: { id: target.device.id },
-                  data: {
-                    online: status.online,
-                    ...(status.uptime === undefined || status.uptime === null
-                      ? {}
-                      : { uptimeSeconds: status.uptime }),
-                    ...(status.online ? { lastSeen: new Date() } : {}),
-                  },
-                }),
-                prisma.activityEvent.create({
-                  data: {
-                    eventType: "google_assistant",
-                    message: `Google Assistant turned ${target.relay.name} ${action.toUpperCase()}`,
-                    deviceId: target.device.deviceId,
-                    deviceUuid: target.device.id,
-                    userId: token.userId,
-                  },
-                }),
-              ]);
-            } catch (error) {
-              console.error("Could not persist Google Home device command state:", error);
+              requestId,
+              eventType: "google_assistant",
+            });
+            if (!status.online) {
               failed = true;
+              errorCode = "deviceOffline";
               break;
             }
           }
           if (failed) {
-            results.push({ ids: targetIds, status: "ERROR", errorCode: "hardError" });
+            results.push({ ids: targetIds, status: "ERROR", errorCode });
           } else {
             results.push({
               ids: targetIds,
@@ -273,11 +247,21 @@ export async function POST(request: NextRequest) {
             });
           }
         } catch (error) {
-          console.error("Google Home device command failed:", error);
+          if (error instanceof DeviceOperationError && error.status === 409) {
+            errorCode = "transientError";
+          } else if (error instanceof DeviceOperationError && error.status < 500) {
+            errorCode = "protocolError";
+          } else if (error instanceof DeviceOperationError && error.status === 502) {
+            errorCode = "hardError";
+          }
+          console.error("Google Home device command failed:", {
+            name: error instanceof Error ? error.name : "UnknownError",
+            status: error instanceof DeviceOperationError ? error.status : undefined,
+          });
           results.push({
             ids: targetIds,
             status: "ERROR",
-            errorCode: "deviceOffline",
+            errorCode,
           });
         }
       }

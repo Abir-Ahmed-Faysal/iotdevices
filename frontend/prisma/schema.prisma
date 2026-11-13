@@ -143,6 +143,8 @@ model Device {
   activityEvents      ActivityEvent[]
   activityStates      DeviceActivityState[]
   runtimeDays         DeviceRuntimeDaily[]
+  commands            DeviceCommand[]
+  commandLock         DeviceCommandLock?
 
   @@index([homeId, deviceId])
   @@map("devices")
@@ -162,6 +164,39 @@ model Relay {
   @@unique([deviceId, relayIndex])
   @@unique([deviceId, gpio])
   @@map("relays")
+}
+
+model DeviceCommand {
+  id            String    @id @default(uuid()) @db.Uuid
+  deviceUuid    String    @map("device_uuid") @db.Uuid
+  requestId     String    @map("request_id") @db.VarChar(256)
+  mqttRequestId String    @unique @map("mqtt_request_id") @db.Uuid
+  relayIndex    Int       @map("relay_index")
+  action        String    @db.VarChar(3)
+  status        String    @default("pending") @db.VarChar(16)
+  attemptCount  Int       @default(0) @map("attempt_count")
+  errorMessage  String?   @map("error_message") @db.VarChar(240)
+  errorStatus   Int?      @map("error_status")
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  completedAt   DateTime? @map("completed_at") @db.Timestamptz(6)
+  device        Device    @relation(fields: [deviceUuid], references: [id], onDelete: Cascade)
+
+  @@unique([deviceUuid, requestId, relayIndex])
+  @@index([deviceUuid, createdAt(sort: Desc)])
+  @@index([status, updatedAt])
+  @@map("device_commands")
+}
+
+model DeviceCommandLock {
+  deviceUuid     String    @id @map("device_uuid") @db.Uuid
+  leaseId        String?   @map("lease_id") @db.Uuid
+  leaseExpiresAt DateTime? @map("lease_expires_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
+  device         Device    @relation(fields: [deviceUuid], references: [id], onDelete: Cascade)
+
+  @@index([leaseExpiresAt])
+  @@map("device_command_locks")
 }
 
 model ApiRateLimit {

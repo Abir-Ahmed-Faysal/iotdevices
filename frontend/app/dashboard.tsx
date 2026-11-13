@@ -366,6 +366,7 @@ export default function Dashboard() {
       });
       const nextStatus = await request<DeviceStatus>(`/api/device/${action}?${query}`, {
         method: "POST",
+        headers: { "Idempotency-Key": crypto.randomUUID() },
       });
       setStatus(nextStatus);
       await refreshActivity(nextStatus.activityWarning);

@@ -1,8 +1,9 @@
+import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { authenticate, isSameOrigin } from "../../../../lib/auth";
 import { getDefaultOwnedDevice, getUserByUsername } from "../../../../lib/device-inventory";
-import { prisma } from "../../../../lib/prisma";
-import { DeviceOperationError, setDeviceState } from "../../../../lib/mqtt-device";
+import { executeDeviceCommand } from "../../../../lib/device-command";
+import { DeviceOperationError } from "../../../../lib/mqtt-device";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -42,48 +43,20 @@ export async function POST(
       return NextResponse.json({ error: "Device or relay was not found." }, { status: 404 });
     }
 
-    const status = await setDeviceState(action, relayIndex, device.deviceId);
-    let activityWarning: string | undefined;
-    try {
-      await prisma.$transaction([
-        prisma.relay.update({
-          where: {
-            deviceId_relayIndex: {
-              deviceId: device.id,
-              relayIndex,
-            },
-          },
-          data: { state: action },
-        }),
-        prisma.device.update({
-          where: { id: device.id },
-          data: {
-            online: status.online,
-            ...(status.uptime === undefined || status.uptime === null
-              ? {}
-              : { uptimeSeconds: status.uptime }),
-            ...(status.online ? { lastSeen: new Date() } : {}),
-          },
-        }),
-        prisma.activityEvent.create({
-          data: {
-            eventType: "command",
-            message: `Turn ${device.name} relay ${relayIndex} ${action.toUpperCase()} command acknowledged`,
-            deviceId: status.deviceId,
-            deviceUuid: device.id,
-            userId: user.id,
-          },
-        }),
-      ]);
-    } catch (error) {
-      console.error("Could not record device command activity:", error);
-      activityWarning = "Device command succeeded, but its state or activity could not be saved.";
-    }
+    const requestId = request.headers.get("idempotency-key") || randomUUID();
+    const status = await executeDeviceCommand({
+      device,
+      userId: user.id,
+      relayIndex,
+      action,
+      requestId,
+      eventType: "command",
+    });
     return NextResponse.json({
       ...status,
       name: device.name,
       relayIndex,
-      activityWarning,
+      requestId,
     });
   } catch (error) {
     if (error instanceof DeviceOperationError) {

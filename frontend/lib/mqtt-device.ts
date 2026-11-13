@@ -11,14 +11,17 @@ export type DeviceStatus = {
   ip?: string;
   uptime?: number | null;
   online: boolean;
-  transport: "mqtt";
+  transport: "mqtt" | "local";
   lastSeen: string | null;
   requestId?: string;
 };
 
 export class DeviceOperationError extends Error {
-  constructor(message: string, readonly status: number) {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
     super(message);
+    this.status = status;
   }
 }
 

@@ -13,6 +13,7 @@ import okhttp3.Response
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -148,7 +149,12 @@ class IoTApi(private val context: Context) {
     ): String? {
         require(action == "on" || action == "off")
         require(relayIndex in 1..4)
-        return execute(devicePath("/api/device/$action", deviceId, relayIndex), "POST", "")
+        return execute(
+            devicePath("/api/device/$action", deviceId, relayIndex),
+            "POST",
+            "",
+            idempotencyKey = UUID.randomUUID().toString(),
+        )
             .optStringOrNull("activityWarning")
     }
 
@@ -216,10 +222,12 @@ class IoTApi(private val context: Context) {
         path: String,
         method: String = "GET",
         body: String? = null,
+        idempotencyKey: String? = null,
     ): JSONObject {
         val requestBody = body?.toRequestBody(JSON_MEDIA_TYPE)
         val builder = Request.Builder()
             .url(BuildConfig.API_BASE_URL.toHttpUrl().resolve(path) ?: error("Invalid API path."))
+        if (idempotencyKey != null) builder.header("Idempotency-Key", idempotencyKey)
         when (method) {
             "GET" -> builder.get()
             "POST" -> builder.post(requestBody ?: ByteArray(0).toRequestBody(null))
