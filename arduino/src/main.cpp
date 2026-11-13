@@ -38,7 +38,8 @@ unsigned long networkStartTime = 0;
 bool previouslyConnected = false;
 bool timeSyncStarted = false;
 bool clockSynchronized = false;
-bool relayIsOn = false;
+bool relayStates[RELAY_COUNT] = {};
+bool relayConfigurationValid = true;
 bool apModeActive = false;
 bool emergencyApAttempted = false;
 
@@ -50,10 +51,41 @@ bool mqttIsConfigured() {
          MQTT_PASSWORD[0] != '\0' && MQTT_ROOT_CA[0] != '\0';
 }
 
-void setRelay(bool turnOn) {
-  relayIsOn = turnOn;
-  const bool outputHigh = RELAY_ACTIVE_LOW ? !turnOn : turnOn;
-  digitalWrite(RELAY_PIN, outputHigh ? HIGH : LOW);
+bool isSafeRelayPin(uint8_t pin) {
+  return pin == 4 || pin == 14 || pin == 32 || pin == 33;
+}
+
+void initializeRelays() {
+  for (size_t i = 0; i < RELAY_COUNT; ++i) {
+    if (!isSafeRelayPin(RELAYS[i].pin)) {
+      Serial.printf("Relay %u uses an unsupported GPIO; relay commands disabled.\n",
+                    static_cast<unsigned>(i + 1));
+      relayConfigurationValid = false;
+      continue;
+    }
+    for (size_t previous = 0; previous < i; ++previous) {
+      if (RELAYS[previous].pin == RELAYS[i].pin) {
+        Serial.printf("Relay %u duplicates a GPIO; relay commands disabled.\n",
+                      static_cast<unsigned>(i + 1));
+        relayConfigurationValid = false;
+      }
+    }
+    const bool outputHigh = RELAYS[i].activeLow;
+    digitalWrite(RELAYS[i].pin, outputHigh ? HIGH : LOW);
+    pinMode(RELAYS[i].pin, OUTPUT);
+    relayStates[i] = false;
+  }
+}
+
+bool setRelay(uint8_t relayIndex, bool turnOn) {
+  if (!relayConfigurationValid || relayIndex == 0 || relayIndex > RELAY_COUNT) {
+    return false;
+  }
+  const size_t relay = relayIndex - 1;
+  relayStates[relay] = turnOn;
+  const bool outputHigh = RELAYS[relay].activeLow ? !turnOn : turnOn;
+  digitalWrite(RELAYS[relay].pin, outputHigh ? HIGH : LOW);
+  return true;
 }
 
 String getDeviceIp() {
@@ -78,24 +110,35 @@ const char* getNetworkModeName() {
   }
 }
 
-bool publishMqttStatus(const char* requestId = nullptr) {
+bool publishMqttStatus(uint8_t relayIndex = 1, const char* requestId = nullptr) {
   if (!mqttClient.connected()) {
     return false;
   }
 
-  StaticJsonDocument<256> status;
+  StaticJsonDocument<768> status;
   status["name"] = DEVICE_NAME;
   status["deviceId"] = MQTT_DEVICE_ID;
-  status["state"] = relayIsOn ? "on" : "off";
+  status["state"] = relayStates[0] ? "on" : "off";
+  status["relayIndex"] = relayIndex;
+  if (relayIndex > 0 && relayIndex <= RELAY_COUNT) {
+    status["relayState"] = relayStates[relayIndex - 1] ? "on" : "off";
+  }
   status["ip"] = getDeviceIp();
   status["network"] = getNetworkModeName();
   status["uptime"] = millis() / 1000;
   status["online"] = true;
+  JsonArray relays = status.createNestedArray("relays");
+  for (size_t i = 0; i < RELAY_COUNT; ++i) {
+    JsonObject relay = relays.createNestedObject();
+    relay["relayIndex"] = i + 1;
+    relay["name"] = RELAYS[i].name;
+    relay["state"] = relayStates[i] ? "on" : "off";
+  }
   if (requestId != nullptr) {
     status["requestId"] = requestId;
   }
 
-  char payload[256];
+  char payload[768];
   const size_t length = serializeJson(status, payload, sizeof(payload));
   if (length == 0 || length >= sizeof(payload)) {
     Serial.println("Could not serialize MQTT status.");
@@ -139,34 +182,58 @@ void onMqttMessage(const espMqttClientTypes::MessageProperties& properties,
 
   const char* action = command["action"] | "";
   const char* requestId = command["requestId"] | "";
+  if (command.containsKey("relayIndex") && !command["relayIndex"].is<int>()) {
+    Serial.println("Ignored MQTT command with an invalid relay index.");
+    return;
+  }
+  const int relayIndex = command["relayIndex"] | 1;
   if (strlen(requestId) > 64) {
     Serial.println("Ignored MQTT command with an invalid request ID.");
     return;
   }
+  if (relayIndex < 1 || relayIndex > RELAY_COUNT) {
+    Serial.println("Ignored MQTT command with an invalid relay index.");
+    return;
+  }
 
+  bool turnOn;
   if (strcmp(action, "on") == 0) {
-    setRelay(true);
+    turnOn = true;
   } else if (strcmp(action, "off") == 0) {
-    setRelay(false);
+    turnOn = false;
   } else {
     Serial.println("Ignored unsupported MQTT command.");
     return;
   }
+  if (!setRelay(relayIndex, turnOn)) {
+    Serial.println("Ignored MQTT command because relay configuration is invalid.");
+    return;
+  }
 
-  if (!publishMqttStatus(requestId[0] == '\0' ? nullptr : requestId)) {
+  if (!publishMqttStatus(relayIndex, requestId[0] == '\0' ? nullptr : requestId)) {
     Serial.println("Could not publish MQTT command result.");
   }
 }
 
 String makeStatusJson() {
-  const String state = relayIsOn ? "on" : "off";
-  const String ip = getDeviceIp();
-  const unsigned long uptimeSeconds = millis() / 1000;
-
-  return "{\"name\":\"" + String(DEVICE_NAME) + "\",\"deviceId\":\"" +
-         String(MQTT_DEVICE_ID) + "\",\"state\":\"" + state +
-         "\",\"ip\":\"" + ip + "\",\"network\":\"" + String(getNetworkModeName()) +
-         "\",\"uptime\":" + String(uptimeSeconds) + "}";
+  StaticJsonDocument<768> status;
+  status["name"] = DEVICE_NAME;
+  status["deviceId"] = MQTT_DEVICE_ID;
+  status["state"] = relayStates[0] ? "on" : "off";
+  status["ip"] = getDeviceIp();
+  status["network"] = getNetworkModeName();
+  status["uptime"] = millis() / 1000;
+  status["online"] = true;
+  JsonArray relays = status.createNestedArray("relays");
+  for (size_t i = 0; i < RELAY_COUNT; ++i) {
+    JsonObject relay = relays.createNestedObject();
+    relay["relayIndex"] = i + 1;
+    relay["name"] = RELAYS[i].name;
+    relay["state"] = relayStates[i] ? "on" : "off";
+  }
+  String payload;
+  serializeJson(status, payload);
+  return payload;
 }
 
 void sendStatus() {
@@ -187,7 +254,7 @@ void setupRoutes() {
       server.send(403, "application/json", "{\"error\":\"Local control is disabled or unauthorized.\"}");
       return;
     }
-    setRelay(true);
+    setRelay(1, true);
     sendStatus();
   });
 
@@ -196,7 +263,7 @@ void setupRoutes() {
       server.send(403, "application/json", "{\"error\":\"Local control is disabled or unauthorized.\"}");
       return;
     }
-    setRelay(false);
+    setRelay(1, false);
     sendStatus();
   });
 
@@ -279,8 +346,7 @@ void setup() {
   snprintf(mqttStateTopic, sizeof(mqttStateTopic), "%s/%s/state",
            MQTT_TOPIC_ROOT, MQTT_DEVICE_ID);
 
-  setRelay(false);
-  pinMode(RELAY_PIN, OUTPUT);
+  initializeRelays();
 
   if (mqttIsConfigured()) {
     static const char offlinePayload[] =

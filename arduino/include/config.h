@@ -5,8 +5,19 @@
 constexpr char DEVICE_NAME[] = "Faysal IoT";
 constexpr char DEVICE_HOSTNAME[] = "faysal-iot";
 constexpr char MQTT_TOPIC_ROOT[] = "faysal-iot/v1/devices";
-constexpr int RELAY_PIN = 4;
-constexpr bool RELAY_ACTIVE_LOW = false;
+
+struct RelayConfig {
+  uint8_t pin;
+  bool activeLow;
+  const char* name;
+};
+
+constexpr RelayConfig RELAYS[] = {
+    {4, false, "Relay 1"},
+};
+constexpr size_t RELAY_COUNT = sizeof(RELAYS) / sizeof(RELAYS[0]);
+static_assert(RELAY_COUNT > 0 && RELAY_COUNT <= 4,
+              "Configure between one and four relays.");
 
 // WT32-ETH01 LAN8720 Ethernet PHY configuration
 constexpr eth_phy_type_t ETH_TYPE = ETH_PHY_LAN8720;

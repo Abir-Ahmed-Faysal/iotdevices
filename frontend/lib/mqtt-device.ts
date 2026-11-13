@@ -5,6 +5,9 @@ export type DeviceStatus = {
   name?: string;
   deviceId: string;
   state?: "on" | "off" | "unknown";
+  relayIndex?: number;
+  relayState?: "on" | "off";
+  relays?: Array<{ relayIndex: number; name?: string; state: "on" | "off" }>;
   ip?: string;
   uptime?: number | null;
   online: boolean;
@@ -124,10 +127,10 @@ function connect(client: MqttClient) {
   });
 }
 
-function parseStatus(payload: Buffer, deviceId: string): DeviceStatus | null {
+function parseStatus(payload: Buffer, deviceId: string, requestedRelayIndex = 1): DeviceStatus | null {
   if (payload.length > 1024) return null;
   try {
-    const value = JSON.parse(payload.toString("utf8")) as Partial<DeviceStatus>;
+    const value = JSON.parse(payload.toString("utf8")) as Record<string, unknown>;
     if (
       value.deviceId !== deviceId ||
       typeof value.online !== "boolean" ||
@@ -135,10 +138,46 @@ function parseStatus(payload: Buffer, deviceId: string): DeviceStatus | null {
     ) {
       return null;
     }
+    let relays: DeviceStatus["relays"];
+    if (value.relays !== undefined) {
+      if (!Array.isArray(value.relays)) return null;
+      relays = [];
+      for (const item of value.relays) {
+        if (typeof item !== "object" || item === null || Array.isArray(item)) return null;
+        const relay = item as Record<string, unknown>;
+        if (
+          !Number.isInteger(relay.relayIndex) ||
+          Number(relay.relayIndex) < 1 ||
+          Number(relay.relayIndex) > 4 ||
+          (relay.state !== "on" && relay.state !== "off")
+        ) {
+          return null;
+        }
+        relays.push({
+          relayIndex: Number(relay.relayIndex),
+          name: typeof relay.name === "string" ? relay.name : undefined,
+          state: relay.state,
+        });
+      }
+    }
+    const selectedRelay = relays?.find((relay) => relay.relayIndex === requestedRelayIndex);
+    const specificRelayState = value.relayIndex === requestedRelayIndex &&
+      (value.relayState === "on" || value.relayState === "off")
+      ? value.relayState
+      : selectedRelay?.state;
     return {
-      ...value,
+      name: typeof value.name === "string" ? value.name : undefined,
       deviceId,
       online: value.online,
+      state: requestedRelayIndex === 1
+        ? selectedRelay?.state ?? value.state as DeviceStatus["state"]
+        : specificRelayState ?? "unknown",
+      relayIndex: requestedRelayIndex,
+      relayState: specificRelayState,
+      relays,
+      ip: typeof value.ip === "string" ? value.ip : undefined,
+      uptime: typeof value.uptime === "number" ? value.uptime : null,
+      requestId: typeof value.requestId === "string" ? value.requestId : undefined,
       transport: "mqtt",
       lastSeen: new Date().toISOString(),
     };
@@ -160,8 +199,14 @@ function offlineStatus(deviceId: string): DeviceStatus {
   };
 }
 
-export async function getDeviceStatus(deviceId?: string) {
+export async function getDeviceStatus(deviceId?: string, relayIndex = 1) {
+  if (!Number.isSafeInteger(relayIndex) || relayIndex < 1 || relayIndex > 4) {
+    throw new DeviceOperationError("Relay index must be between 1 and 4.", 400);
+  }
   if (getControlMode() === "local") {
+    if (relayIndex !== 1) {
+      throw new DeviceOperationError("Local control supports only relay 1.", 503);
+    }
     return requestLocalDevice("/status", deviceId);
   }
   const { client, config } = openClient(deviceId);
@@ -179,7 +224,7 @@ export async function getDeviceStatus(deviceId?: string) {
 
       client.on("message", (topic, payload) => {
         if (topic !== `faysal-iot/v1/devices/${config.deviceId}/state`) return;
-        const status = parseStatus(payload, config.deviceId);
+        const status = parseStatus(payload, config.deviceId, relayIndex);
         if (status) finish(status);
       });
       client.subscribe(`faysal-iot/v1/devices/${config.deviceId}/state`, { qos: 1 }, (error) => {
@@ -195,9 +240,18 @@ export async function getDeviceStatus(deviceId?: string) {
   }
 }
 
-export async function setDeviceState(action: "on" | "off", relayIndex = 1, deviceId?: string) {
+export async function setDeviceState(
+  action: "on" | "off",
+  relayIndex = 1,
+  deviceId?: string,
+  requestedId?: string,
+) {
   if (!Number.isSafeInteger(relayIndex) || relayIndex < 1 || relayIndex > 4) {
     throw new DeviceOperationError("Relay index must be between 1 and 4.", 400);
+  }
+  const requestId = requestedId || randomUUID();
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(requestId)) {
+    throw new DeviceOperationError("Request ID must be 1 to 64 safe characters.", 400);
   }
   if (getControlMode() === "local") {
     if (relayIndex !== 1) {
@@ -209,7 +263,6 @@ export async function setDeviceState(action: "on" | "off", relayIndex = 1, devic
   try {
     await connect(client);
     return await new Promise<DeviceStatus>((resolve, reject) => {
-      const requestId = randomUUID();
       const expectedState = action;
       let settled = false;
       const finish = (error?: DeviceOperationError, status?: DeviceStatus) => {
@@ -225,7 +278,7 @@ export async function setDeviceState(action: "on" | "off", relayIndex = 1, devic
 
       client.on("message", (topic, payload) => {
         if (topic !== `faysal-iot/v1/devices/${config.deviceId}/state`) return;
-        const status = parseStatus(payload, config.deviceId);
+        const status = parseStatus(payload, config.deviceId, relayIndex);
         if (!status || status.requestId !== requestId) return;
         if (status.state !== expectedState) {
           finish(new DeviceOperationError("Device acknowledged an unexpected state.", 502));
