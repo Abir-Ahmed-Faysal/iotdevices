@@ -254,7 +254,11 @@ void setupRoutes() {
       server.send(403, "application/json", "{\"error\":\"Local control is disabled or unauthorized.\"}");
       return;
     }
-    setRelay(1, true);
+    if (!setRelay(1, true)) {
+      server.send(503, "application/json", "{\"error\":\"Relay configuration is invalid.\"}");
+      return;
+    }
+    publishMqttStatus(1);
     sendStatus();
   });
 
@@ -263,7 +267,11 @@ void setupRoutes() {
       server.send(403, "application/json", "{\"error\":\"Local control is disabled or unauthorized.\"}");
       return;
     }
-    setRelay(1, false);
+    if (!setRelay(1, false)) {
+      server.send(503, "application/json", "{\"error\":\"Relay configuration is invalid.\"}");
+      return;
+    }
+    publishMqttStatus(1);
     sendStatus();
   });
 
