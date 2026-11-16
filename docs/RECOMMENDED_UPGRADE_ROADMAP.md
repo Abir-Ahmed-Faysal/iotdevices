@@ -2,7 +2,7 @@
 
 This roadmap is advisory. The original audit made no source changes; the later approved follow-up changed OAuth/backend code only. Hardware configuration, GPIO, MQTT topics, and message formats remain untouched. Keep the existing firmware and MQTT contract stable through the first phases.
 
-**Progress note (2026-11-12):** After user approval, OAuth-specific stabilization was implemented in the working tree (strict client credentials/redirect allowlist, login continuation, single-use code and grant storage, refresh rotation, revocation, and tests). The OAuth migration is not applied and deployment/Google linking are not verified. Other Phase 1 items, especially local ESP32 access/AP security and Android local transport, remain pending approval and work.
+**Progress note (2026-11-12):** After user approval, OAuth-specific stabilization was implemented (strict client credentials/redirect allowlist, login continuation, single-use code and grant storage, refresh rotation, revocation, and tests). The migration was applied to the user-confirmed production Neon database. A separate local Docker database passed OAuth HTTP end-to-end checks; Google Console linking/deployment are still not verified. Other Phase 1 items, especially local ESP32 access/AP security and Android local transport, remain pending.
 
 ## Phase 1: Existing System Stabilization
 

@@ -1,10 +1,7 @@
 package com.faysaliot.control.universal
 
 import android.Manifest
-import android.content.Intent
 import android.os.Bundle
-import android.speech.RecognizerIntent
-import android.speech.SpeechRecognizer
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -44,14 +41,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.Alignment
@@ -73,7 +68,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.text.DateFormat
 import java.util.Date
-import java.util.Locale
 
 private val Navy = Color(0xFF071229)
 private val Panel = Color(0xFF11203E)
@@ -94,36 +88,21 @@ private val DarkColors = darkColorScheme(
 )
 
 class MainActivity : ComponentActivity() {
-    private val autoStartVoice = mutableStateOf(false)
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val api = IoTApi(applicationContext)
-        checkVoiceIntent(intent)
         setContent {
             MaterialTheme(colorScheme = DarkColors) {
                 Surface(modifier = Modifier.fillMaxSize(), color = Navy) {
-                    FaysalApp(api, autoStartVoice.value) { autoStartVoice.value = false }
+                    FaysalApp(api)
                 }
             }
-        }
-    }
-
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        setIntent(intent)
-        checkVoiceIntent(intent)
-    }
-
-    private fun checkVoiceIntent(intent: Intent?) {
-        if (intent?.getBooleanExtra("EXTRA_START_VOICE", false) == true) {
-            autoStartVoice.value = true
         }
     }
 }
 
 @Composable
-private fun FaysalApp(api: IoTApi, autoStartVoice: Boolean = false, onVoiceConsumed: () -> Unit = {}) {
+private fun FaysalApp(api: IoTApi) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var signedIn by remember { mutableStateOf(false) }
@@ -143,17 +122,6 @@ private fun FaysalApp(api: IoTApi, autoStartVoice: Boolean = false, onVoiceConsu
     var runtimeError by remember { mutableStateOf("") }
 
     var backgroundServiceEnabled by remember { mutableStateOf(IoTSettings.isBackgroundServiceEnabled(context)) }
-    var wakeWordEnabled by remember { mutableStateOf(IoTSettings.isWakeWordEnabled(context)) }
-    var voiceLanguage by remember { mutableStateOf(IoTSettings.getVoiceLanguage(context)) }
-    var voiceMessage by remember { mutableStateOf("") }
-
-    var pendingVoiceAction by remember { mutableStateOf<String?>(null) }
-    var pendingVoiceTarget by remember { mutableStateOf("Device Output") }
-
-    val voiceAssistant = remember(voiceLanguage) { VoiceAssistantManager(context, voiceLanguage) }
-    DisposableEffect(voiceAssistant) {
-        onDispose { voiceAssistant.destroy() }
-    }
 
     suspend fun refreshStatus() {
         try {
@@ -187,7 +155,7 @@ private fun FaysalApp(api: IoTApi, autoStartVoice: Boolean = false, onVoiceConsu
         }
     }
 
-    suspend fun performCommand(action: String, target: String = "Device Output") {
+    suspend fun performCommand(action: String) {
         busy = true
         deviceError = ""
         try {
@@ -200,9 +168,6 @@ private fun FaysalApp(api: IoTApi, autoStartVoice: Boolean = false, onVoiceConsu
                 activityCursor = page.nextCursor
             }
             activityError = warning ?: status?.activityWarning.orEmpty()
-            val resultMsg = VoiceAssistantManager.getSuccessResultText(action, target, voiceLanguage)
-            voiceMessage = resultMsg
-            voiceAssistant.speak(resultMsg)
         } catch (error: Exception) {
             if (error is ApiException && error.statusCode == 401) {
                 signedIn = false
@@ -277,7 +242,6 @@ private fun FaysalApp(api: IoTApi, autoStartVoice: Boolean = false, onVoiceConsu
             activityError = activityError,
             runtimeError = runtimeError,
             backgroundServiceEnabled = backgroundServiceEnabled,
-            wakeWordEnabled = wakeWordEnabled,
             onToggleBackgroundService = { enabled ->
                 backgroundServiceEnabled = enabled
                 IoTSettings.setBackgroundServiceEnabled(context, enabled)
@@ -285,96 +249,6 @@ private fun FaysalApp(api: IoTApi, autoStartVoice: Boolean = false, onVoiceConsu
                     IoTBackgroundService.start(context)
                 } else {
                     IoTBackgroundService.stop(context)
-                }
-            },
-            onToggleWakeWord = { enabled ->
-                wakeWordEnabled = enabled
-                IoTSettings.setWakeWordEnabled(context, enabled)
-            },
-            voiceMessage = voiceMessage,
-            voiceLanguage = voiceLanguage,
-            onVoiceLanguageChange = { lang ->
-                voiceLanguage = lang
-                IoTSettings.setVoiceLanguage(context, lang)
-                voiceAssistant.setLanguage(lang)
-            },
-            onVoiceResult = { recognized ->
-                voiceMessage = recognized
-                if (wakeWordEnabled && VoiceAssistantManager.isWakeWord(recognized)) {
-                    val greeting = VoiceAssistantManager.getGreetingText(voiceLanguage)
-                    voiceMessage = greeting
-                    voiceAssistant.speak(greeting)
-                } else {
-                    val assistantIntent = VoiceAssistantManager.parseAssistantIntent(recognized)
-                    if (assistantIntent != null) {
-                        pendingVoiceAction = assistantIntent.first
-                        pendingVoiceTarget = assistantIntent.second
-                        val prompt = VoiceAssistantManager.getConfirmationPromptText(
-                            assistantIntent.first,
-                            assistantIntent.second,
-                            voiceLanguage,
-                        )
-                        voiceMessage = prompt
-                        voiceAssistant.speak(prompt)
-                    } else if (pendingVoiceAction != null) {
-                        when (VoiceAssistantManager.parseConfirmation(recognized)) {
-                            true -> {
-                                val action = pendingVoiceAction!!
-                                val target = pendingVoiceTarget
-                                pendingVoiceAction = null
-                                scope.launch { performCommand(action, target) }
-                            }
-                            false -> {
-                                pendingVoiceAction = null
-                                val cancelMsg = VoiceAssistantManager.getCancelResultText(voiceLanguage)
-                                voiceMessage = cancelMsg
-                                voiceAssistant.speak(cancelMsg)
-                            }
-                            null -> {
-                                when (val action = parseVoiceCommand(recognized)) {
-                                    "on", "off" -> {
-                                        pendingVoiceAction = action
-                                        pendingVoiceTarget = "Device Output"
-                                        val prompt = VoiceAssistantManager.getConfirmationPromptText(
-                                            action,
-                                            "Device Output",
-                                            voiceLanguage,
-                                        )
-                                        voiceMessage = prompt
-                                        voiceAssistant.speak(prompt)
-                                    }
-                                    else -> {
-                                        voiceMessage = if (voiceLanguage == "bn-BD") {
-                                            "কমান্ড বোঝা যায়নি। 'হে জয়', 'মোটর ১ चालू করো' বা 'রিলে বন্ধ করো' বলুন।"
-                                        } else {
-                                            "Command not recognized. Try 'Hey FishVoice', 'Turn on motor 1', or 'Turn off relay'."
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    } else {
-                        when (val action = parseVoiceCommand(recognized)) {
-                            "on", "off" -> {
-                                pendingVoiceAction = action
-                                pendingVoiceTarget = "Device Output"
-                                val prompt = VoiceAssistantManager.getConfirmationPromptText(
-                                    action,
-                                    "Device Output",
-                                    voiceLanguage,
-                                )
-                                voiceMessage = prompt
-                                voiceAssistant.speak(prompt)
-                            }
-                            else -> {
-                                voiceMessage = if (voiceLanguage == "bn-BD") {
-                                    "কমান্ড বোঝা যায়নি। 'হে জয়', 'মোটর ১ चालू করো' বা 'রিলে বন্ধ করো' বলুন।"
-                                } else {
-                                    "Command not recognized. Try 'Hey FishVoice', 'Turn on motor 1', or 'Turn off relay'."
-                                }
-                            }
-                        }
-                    }
                 }
             },
             onDeviceAction = { action ->
@@ -420,21 +294,6 @@ private fun FaysalApp(api: IoTApi, autoStartVoice: Boolean = false, onVoiceConsu
                         busy = false
                     }
                 }
-            },
-            pendingVoiceAction = pendingVoiceAction,
-            pendingVoiceTarget = pendingVoiceTarget,
-            onConfirmPendingVoice = {
-                pendingVoiceAction?.let { action ->
-                    val target = pendingVoiceTarget
-                    pendingVoiceAction = null
-                    scope.launch { performCommand(action, target) }
-                }
-            },
-            onDismissPendingVoice = {
-                pendingVoiceAction = null
-                val cancelMsg = VoiceAssistantManager.getCancelResultText(voiceLanguage)
-                voiceMessage = cancelMsg
-                voiceAssistant.speak(cancelMsg)
             },
         )
     }
@@ -525,66 +384,14 @@ private fun DashboardScreen(
     activityError: String,
     runtimeError: String,
     backgroundServiceEnabled: Boolean,
-    wakeWordEnabled: Boolean,
     onToggleBackgroundService: (Boolean) -> Unit,
-    onToggleWakeWord: (Boolean) -> Unit,
-    voiceMessage: String,
-    voiceLanguage: String,
-    onVoiceLanguageChange: (String) -> Unit,
-    onVoiceResult: (String) -> Unit,
     onDeviceAction: (String) -> Unit,
     onLoadOlder: () -> Unit,
     onToggleActivity: () -> Unit,
     onRefresh: () -> Unit,
     onSignOut: () -> Unit,
-    pendingVoiceAction: String?,
-    pendingVoiceTarget: String,
-    onConfirmPendingVoice: () -> Unit,
-    onDismissPendingVoice: () -> Unit,
 ) {
     val context = LocalContext.current
-    var listening by remember { mutableStateOf(false) }
-    var voiceError by remember { mutableStateOf("") }
-    var manualVoiceText by remember { mutableStateOf("") }
-    val onVoiceResultLatest by rememberUpdatedState(onVoiceResult)
-
-    val speechIntentLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult(),
-    ) { result ->
-        listening = false
-        if (result.resultCode == android.app.Activity.RESULT_OK) {
-            val matches = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
-            val spoken = matches?.firstOrNull()
-            if (!spoken.isNullOrBlank()) {
-                onVoiceResultLatest(spoken)
-            } else {
-                voiceError = "No speech detected. Please try again."
-            }
-        }
-    }
-
-    val microphonePermission = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        if (granted) {
-            voiceError = ""
-            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE, voiceLanguage)
-                putExtra(RecognizerIntent.EXTRA_PROMPT, if (voiceLanguage == "bn-BD") "হে জয় বলুন বা কমান্ড দিন" else "Say Hey FishVoice or turn on motor")
-            }
-            try {
-                speechIntentLauncher.launch(intent)
-                listening = true
-            } catch (_: Exception) {
-                listening = false
-                voiceError = "Speech recognition dialog failed. You can type or use keyboard dictation below."
-            }
-        } else {
-            voiceError = "Microphone permission is needed for voice commands."
-        }
-    }
-
     val notificationPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { _ -> }
@@ -670,7 +477,7 @@ private fun DashboardScreen(
 
             Panel(title = "App & Background Settings") {
                 Text(
-                    "Server-synced device control, background service & FishVoice Voice Assistant",
+                    "Server-synced device control and optional background monitoring",
                     color = Muted,
                     fontSize = 13.sp,
                 )
@@ -704,84 +511,6 @@ private fun DashboardScreen(
                         },
                     )
                 }
-                Spacer(Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("FishVoice Wake Word (\"Hey FishVoice\" / \"হে জয়\")", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                        Text(
-                            "Activates voice greeting (\"Yes Faysal\") & command confirmation",
-                            color = Muted,
-                            fontSize = 11.sp,
-                        )
-                    }
-                    Switch(
-                        checked = wakeWordEnabled,
-                        onCheckedChange = onToggleWakeWord,
-                    )
-                }
-            }
-
-            Panel(title = "Voice control") {
-                Text("Push to talk · confirm before sending a command", color = Muted, fontSize = 13.sp)
-                Spacer(Modifier.height(10.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    LanguageButton("বাংলা", voiceLanguage == "bn-BD") { onVoiceLanguageChange("bn-BD") }
-                    LanguageButton("English", voiceLanguage == "en-US") { onVoiceLanguageChange("en-US") }
-                }
-                Spacer(Modifier.height(8.dp))
-                Button(
-                    onClick = {
-                        voiceError = ""
-                        microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(if (listening) "Listening…" else "🎙  Speak a command")
-                }
-                Spacer(Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    OutlinedTextField(
-                        value = manualVoiceText,
-                        onValueChange = { manualVoiceText = it },
-                        modifier = Modifier.weight(1f),
-                        placeholder = { Text(if (voiceLanguage == "bn-BD") "কমান্ড টাইপ করুন (যেমন: হে জয়, মোটর ১ चालू করো)" else "Type command (e.g. Hey FishVoice, turn on motor 1)") },
-                        singleLine = true,
-                    )
-                    Button(
-                        onClick = {
-                            if (manualVoiceText.isNotBlank()) {
-                                val text = manualVoiceText
-                                manualVoiceText = ""
-                                onVoiceResult(text)
-                            }
-                        },
-                        enabled = manualVoiceText.isNotBlank(),
-                    ) {
-                        Text("Send")
-                    }
-                }
-                if (voiceMessage.isNotBlank()) {
-                    Spacer(Modifier.height(6.dp))
-                    Text(voiceMessage, color = Blue, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                }
-                if (voiceError.isNotBlank()) {
-                    Spacer(Modifier.height(6.dp))
-                    Text(voiceError, color = ErrorRed, fontSize = 13.sp)
-                }
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "Voice is processed by your device's speech-recognition provider, which may use the internet. No audio is stored by this app.",
-                    color = Muted,
-                    fontSize = 11.sp,
-                )
             }
 
             if (deviceError.isNotBlank()) MessageText(deviceError)
@@ -826,27 +555,6 @@ private fun DashboardScreen(
         }
     }
 
-    if (pendingVoiceAction != null) {
-        AlertDialog(
-            onDismissRequest = onDismissPendingVoice,
-            title = { Text("Confirm voice command") },
-            text = {
-                Text(
-                    if (pendingVoiceAction == "on") {
-                        "The app heard a request to turn the device ON. Send this command?"
-                    } else {
-                        "The app heard a request to turn the device OFF. Send this command?"
-                    },
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = onConfirmPendingVoice, enabled = status?.online == true) {
-                    Text("Confirm")
-                }
-            },
-            dismissButton = { TextButton(onClick = onDismissPendingVoice) { Text("Cancel") } },
-        )
-    }
 }
 
 @Composable
@@ -887,15 +595,6 @@ private fun Panel(title: String, content: @Composable () -> Unit) {
             Spacer(Modifier.height(10.dp))
             content()
         }
-    }
-}
-
-@Composable
-private fun LanguageButton(label: String, selected: Boolean, onClick: () -> Unit) {
-    if (selected) {
-        Button(onClick = onClick) { Text(label) }
-    } else {
-        OutlinedButton(onClick = onClick) { Text(label) }
     }
 }
 
@@ -979,77 +678,6 @@ private fun cumulativeValues(month: RuntimeMonth, relay: Boolean): List<Float> {
 @Composable
 private fun MessageText(message: String) {
     Text(message, color = ErrorRed, fontSize = 12.sp)
-}
-
-private fun startSpeechRecognition(
-    recognizer: SpeechRecognizer?,
-    language: String,
-    onResult: (String) -> Unit,
-    onError: (String) -> Unit,
-    onStarted: (Boolean) -> Unit,
-) {
-    if (recognizer == null) {
-        onError("Speech recognition is not available on this device.")
-        onStarted(false)
-        return
-    }
-    recognizer.setRecognitionListener(object : android.speech.RecognitionListener {
-        override fun onReadyForSpeech(params: Bundle?) = Unit
-        override fun onBeginningOfSpeech() = Unit
-        override fun onRmsChanged(rmsdB: Float) = Unit
-        override fun onBufferReceived(buffer: ByteArray?) = Unit
-        override fun onEndOfSpeech() = Unit
-        override fun onPartialResults(partialResults: Bundle?) = Unit
-        override fun onEvent(eventType: Int, params: Bundle?) = Unit
-        override fun onError(error: Int) {
-            onError("Voice recognition failed (code $error). You can use the manual controls.")
-        }
-        override fun onResults(results: Bundle?) {
-            val words = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-            val first = words?.firstOrNull()
-            if (first.isNullOrBlank()) onError("No voice command was detected.")
-            else onResult(first)
-        }
-    })
-    val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-        putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-        putExtra(RecognizerIntent.EXTRA_LANGUAGE, language)
-        putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
-        putExtra(RecognizerIntent.EXTRA_PROMPT, if (language == "bn-BD") "কমান্ড বলুন" else "Say turn on or turn off")
-    }
-    try {
-        recognizer.startListening(intent)
-        onStarted(true)
-    } catch (error: RuntimeException) {
-        onError("Could not start voice recognition. Try manual control.")
-        onStarted(false)
-    }
-}
-
-internal fun parseVoiceCommand(raw: String): String? {
-    val text = raw.lowercase(Locale.ROOT)
-        .replace(Regex("[.!?,।]"), " ")
-        .trim()
-    if (Regex("\\b(no|not|never|don't|do not|cancel)\\b").containsMatchIn(text) ||
-        text.contains("না")
-    ) return null
-    val onPhrases = listOf(
-        "turn on", "switch on", "power on", "relay on", "turn the light on",
-        "চালু কর", "চালু করুন", "চালু করো", "অন কর", "অন করুন", "অন করো",
-        "chalu koro", "chalu korun", "on koro", "on korun",
-    )
-    val offPhrases = listOf(
-        "turn off", "switch off", "power off", "relay off", "turn the light off",
-        "বন্ধ কর", "বন্ধ করুন", "বন্ধ করো", "অফ কর", "অফ করুন", "অফ করো",
-        "bondho koro", "bondho korun", "off koro", "off korun",
-    )
-    val on = onPhrases.any(text::contains)
-    val off = offPhrases.any(text::contains)
-    return when {
-        on && !off -> "on"
-        off && !on -> "off"
-        else -> null
-    }
 }
 
 private fun formatUptime(seconds: Long?): String {

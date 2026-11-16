@@ -30,7 +30,7 @@ FishVoice IoT (also named Faysal IoT) is a production-grade, multi-tier smart re
 
 - `arduino/` — PlatformIO project & WT32-ETH01 firmware (Ethernet LAN8720, Wi-Fi STA, Emergency SoftAP, TLS MQTTS, HTTP server).
 - `frontend/` — Next.js App Router dashboard & API routes built with TypeScript, Tailwind CSS, Prisma ORM, and Neon PostgreSQL.
-- `android/` — Native Kotlin & Jetpack Compose Android app with Keystore AES-GCM session storage, background monitoring, Voice Assistant (Bengali/English), and Quick Settings tile.
+- `android/` — Native Kotlin & Jetpack Compose Android app with Keystore AES-GCM session storage, relay controls, and optional background monitoring.
 
 ---
 
@@ -79,12 +79,12 @@ Deployed on Vercel at `https://iotpro.vercel.app/`.
 Built with Kotlin and Jetpack Compose targeting Android SDK 37 (targetSdk 36, minSdk 26).
 
 ### Key Components
-- **[MainActivity.kt](file:///C:/WorkSpace/ardino/android/app/src/main/java/com/faysaliot/control/universal/MainActivity.kt)** — Main Compose UI with connection status, relay controls, activity log, runtime graph, and voice control.
+- **[MainActivity.kt](file:///C:/WorkSpace/ardino/android/app/src/main/java/com/faysaliot/control/universal/MainActivity.kt)** — Main Compose UI with connection status, relay controls, activity log, and runtime graph.
 - **[SecureCookieJar.kt](file:///C:/WorkSpace/ardino/android/app/src/main/java/com/faysaliot/control/universal/SecureCookieJar.kt)** — Encrypts session cookies using AES-256-GCM backed by `AndroidKeyStore`.
-- **[IoTBackgroundService.kt](file:///C:/WorkSpace/ardino/android/app/src/main/java/com/faysaliot/control/universal/IoTBackgroundService.kt)** — Foreground service (`foregroundServiceType="dataSync|microphone"`) polling status and handling background speech detection.
+- **[IoTBackgroundService.kt](file:///C:/WorkSpace/ardino/android/app/src/main/java/com/faysaliot/control/universal/IoTBackgroundService.kt)** — Foreground service (`foregroundServiceType="dataSync"`) for optional background status polling; it does not access the microphone.
 - **[IoTBootReceiver.kt](file:///C:/WorkSpace/ardino/android/app/src/main/java/com/faysaliot/control/universal/IoTBootReceiver.kt)** — `ACTION_BOOT_COMPLETED` receiver auto-starting background service on boot.
-- **[VoiceAssistantManager.kt](file:///C:/WorkSpace/ardino/android/app/src/main/java/com/faysaliot/control/universal/VoiceAssistantManager.kt)** — Text-To-Speech engine in Bengali (`bn-BD`) & English (`en-US`), audio focus ducking, and intent parser.
-- **[FishVoiceTileService.kt](file:///C:/WorkSpace/ardino/android/app/src/main/java/com/faysaliot/control/universal/FishVoiceTileService.kt)** — Quick Settings Tile for 1-tap voice control from top notification shade.
+
+Android app voice capture and speech recognition are not used. To control devices with the phone's Google Assistant, use the separate Google Home cloud-to-cloud integration and link the Google account; that integration still requires its production setup and deployment.
 
 ### Building Android App
 ```powershell

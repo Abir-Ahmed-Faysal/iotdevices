@@ -114,6 +114,8 @@ The following changes are now present in the working tree; they are source-verif
 
 **Deployment caveats:** Apply the migration before deploying code that uses it. Existing tokens from the old stateless scheme are intentionally rejected; relinking will be required. The database-backed exchange/refresh/revoke flow, configured Google redirect URI, and Google Console linking flow still need integration testing. Report State, dynamic multi-user discovery, and Google account-to-user mapping remain incomplete.
 
+**Local verification completed:** Using an isolated ephemeral Docker PostgreSQL database (not Neon production), local HTTP tests passed for login, authorize redirect/state, code exchange, code replay rejection, redirect mismatch rejection, refresh rotation and old-token rejection, DISCONNECT revocation, and rejection of the revoked access token. Missing/wrong OAuth client credentials, an unregistered redirect, and unauthenticated authorization behavior were also checked. No credentials or token values were printed. These checks do not substitute for Google Console linking or a production deployment test.
+
 ## Sources
 
 - Local fulfillment: `frontend/app/api/smarthome/fulfillment/route.ts`
