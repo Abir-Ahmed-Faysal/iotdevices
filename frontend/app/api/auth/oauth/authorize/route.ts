@@ -4,6 +4,7 @@ import {
   constantTimeStringEqual,
   createOAuthCode,
   getOAuthClientId,
+  isOAuthStateWithinLimit,
   isOAuthRedirectUriAllowed,
 } from "../../../../../lib/auth";
 
@@ -39,7 +40,7 @@ export async function GET(request: NextRequest) {
   if (!clientId || !constantTimeStringEqual(clientId, configuredClientId)) {
     return NextResponse.json({ error: "Unknown OAuth client." }, { status: 401 });
   }
-  if (state.length > 512) {
+  if (!isOAuthStateWithinLimit(state)) {
     return NextResponse.json({ error: "OAuth state is too long." }, { status: 400 });
   }
 

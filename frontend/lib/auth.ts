@@ -4,8 +4,13 @@ import type { NextRequest, NextResponse } from "next/server";
 export const SESSION_COOKIE = "faysal_session";
 const SESSION_TTL_SECONDS = 12 * 60 * 60;
 const OAUTH_CODE_TTL_SECONDS = 10 * 60;
+const OAUTH_STATE_MAX_BYTES = 4096;
 export const OAUTH_ACCESS_TOKEN_TTL_SECONDS = 60 * 60;
 const OAUTH_REFRESH_TOKEN_TTL_SECONDS = 365 * 24 * 60 * 60;
+
+export function isOAuthStateWithinLimit(state: string) {
+  return Buffer.byteLength(state, "utf8") <= OAUTH_STATE_MAX_BYTES;
+}
 
 function required(name: string) {
   const value = process.env[name]?.trim();

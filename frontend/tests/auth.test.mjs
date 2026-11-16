@@ -12,6 +12,7 @@ const {
   authenticateOAuthClient,
   createOAuthAccessToken,
   getOAuthRedirectUris,
+  isOAuthStateWithinLimit,
   isOAuthRedirectUriAllowed,
   verifyOAuthToken,
 } = await import("../lib/auth.ts");
@@ -45,6 +46,13 @@ test("OAuth redirect configuration rejects insecure non-loopback URIs", () => {
   } finally {
     process.env.GOOGLE_OAUTH_REDIRECT_URIS = configuredUris;
   }
+});
+
+test("OAuth state accepts provider values over 512 bytes but rejects oversized values", () => {
+  assert.equal(isOAuthStateWithinLimit("s".repeat(513)), true);
+  assert.equal(isOAuthStateWithinLimit("s".repeat(4096)), true);
+  assert.equal(isOAuthStateWithinLimit("s".repeat(4097)), false);
+  assert.equal(isOAuthStateWithinLimit("é".repeat(2049)), false);
 });
 
 test("OAuth access tokens are signed and tampering is rejected", () => {
